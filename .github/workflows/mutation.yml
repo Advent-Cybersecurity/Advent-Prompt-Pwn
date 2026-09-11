@@ -26,11 +26,7 @@ jobs:
       - name: Run targeted mutation tests
         run: |
           mutmut run --max-children 4
-          mutmut results --all | tee mutation-results.txt
-          if grep -Eq ": (survived|no tests|timeout|suspicious|segfault)$" mutation-results.txt; then
-            echo "Mutation qualification found an unresolved result"
-            exit 1
-          fi
+          python .github/scripts/check_mutation_results.py mutants mutation-results.txt
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
@@ -38,3 +34,10 @@ jobs:
           path: mutation-results.txt
           if-no-files-found: warn
           retention-days: 14
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: failure()
+        with:
+          name: mutation-debug-metadata
+          path: mutants/**/*.meta
+          if-no-files-found: warn
+          retention-days: 7
