@@ -29,7 +29,7 @@ from advent_prompt_pwn import (
 )
 from advent_prompt_pwn.bundle import verify_evidence_bundle, write_evidence_bundle
 from advent_prompt_pwn.core.models import OracleResult, ToolCall
-from advent_prompt_pwn.core.redaction import redact_endpoint, redact_value
+from advent_prompt_pwn.core.redaction import redact_endpoint, redact_text, redact_value
 from advent_prompt_pwn.corpus import load_corpus_definition, write_starter_corpus
 from advent_prompt_pwn.engagement import (
     ExecutionSpec,
@@ -40,6 +40,7 @@ from advent_prompt_pwn.engagement import (
     write_starter_engagement,
 )
 from advent_prompt_pwn.exceptions import CorpusError, EngagementError, ReportError
+from advent_prompt_pwn.integrity import attempt_sha256, canonical_sha256, report_sha256
 from advent_prompt_pwn.oracles import RegexOracle, oracle_from_spec
 from advent_prompt_pwn.report_io import load_report, report_from_dict, verify_report_evidence
 from advent_prompt_pwn.reporters import report_markdown, save_report
@@ -342,10 +343,43 @@ def test_redaction_rejects_ambiguous_structural_identifiers() -> None:
 
 
 def test_mapping_key_redaction_handles_collisions() -> None:
-    assert redact_value({"secret-a": 1, "secret-b": 2}, ("secret-a", "secret-b")) == {
+    assert redact_value(
+        {"secret-a": 1, "secret-b": 2, "secret-c": 3, "secret-d": 4},
+        ("secret-a", "secret-b", "secret-c", "secret-d"),
+    ) == {
         "[REDACTED]": 1,
         "[REDACTED]#2": 2,
+        "[REDACTED]#3": 3,
+        "[REDACTED]#4": 4,
     }
+
+
+def test_redaction_exact_contract_for_overlaps_markers_patterns_and_containers() -> None:
+    assert redact_text("abcdef", ("abc", "abcdef")) == "[REDACTED]"
+    assert redact_text("topsecret[REDACTED]", ("topsecret",)) == "[REDACTED][REDACTED]"
+    assert (
+        redact_text("api_key=secret-value password: secret-value")
+        == "api_key=[REDACTED] password: [REDACTED]"
+    )
+    nested = ("secret-value", {"field": ["secret-value"]})
+    assert redact_value(nested, ("secret-value",)) == (
+        "[REDACTED]",
+        {"field": ["[REDACTED]"]},
+    )
+
+
+def test_integrity_hash_contract_is_compact_unicode_and_strict() -> None:
+    assert (
+        canonical_sha256({"é": [1, True, None]})
+        == "2c4c876a726b8399c9349e4c78ae44310210554400c621d7c9c4cf6d7c6b1b6d"
+    )
+    with pytest.raises(ValueError, match="Out of range float values"):
+        canonical_sha256(float("nan"))
+    with pytest.raises(TypeError, match="JSON serializable"):
+        canonical_sha256(object())
+    report = _report()
+    assert attempt_sha256(report.attempts[0]) == report.attempts[0].evidence_sha256
+    assert report_sha256(report) == report.integrity_sha256
 
 
 def test_runtime_models_reject_malformed_adapter_and_oracle_values() -> None:
@@ -368,6 +402,14 @@ def test_endpoint_evidence_redacts_query_values_and_fragments() -> None:
     assert "tenant=%5BREDACTED%5D" in rendered
     assert "/v1" not in rendered
     assert "/[REDACTED]" in rendered
+    exact = redact_endpoint(
+        "https://secret.example.test/private?empty=&secret_name=value&tenant=a#frag",
+        ("secret",),
+    )
+    assert exact == (
+        "https://[REDACTED].example.test/[REDACTED]?empty=%5BREDACTED%5D&"
+        "%5BREDACTED%5D_name=%5BREDACTED%5D&tenant=%5BREDACTED%5D#[REDACTED]"
+    )
 
 
 def test_sensitive_identity_pseudonyms_require_hmac_key() -> None:

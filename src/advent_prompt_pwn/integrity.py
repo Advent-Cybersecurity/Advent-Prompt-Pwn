@@ -30,9 +30,8 @@ def canonical_sha256(value: Any) -> str:
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
-        allow_nan=False,
-        default=str,
-    ).encode("utf-8")
+        allow_nan=False,  # pragma: no mutate - None is an equivalent false value to json.dumps
+    ).encode("utf-8")  # pragma: no mutate - Python codec names are case-insensitive
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -40,7 +39,7 @@ def attempt_sha256(attempt: AttemptResult) -> str:
     """Hash every persisted attempt field except the digest itself."""
 
     payload = asdict(attempt)
-    payload.pop("evidence_sha256", None)
+    del payload["evidence_sha256"]
     return canonical_sha256(payload)
 
 
@@ -48,7 +47,7 @@ def report_sha256(report: RunReport) -> str:
     """Hash the complete report envelope, including its attempt digests."""
 
     payload = asdict(report)
-    payload.pop("integrity_sha256", None)
+    del payload["integrity_sha256"]
     return canonical_sha256(payload)
 
 

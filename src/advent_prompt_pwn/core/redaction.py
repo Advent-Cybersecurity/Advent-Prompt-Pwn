@@ -70,8 +70,7 @@ def redact_endpoint(value: str, secrets: Sequence[str] = ()) -> str:
         [
             (redact_text(name, secrets), "[REDACTED]")
             for name, _ in parse_qsl(parsed.query, keep_blank_values=True)
-        ],
-        doseq=True,
+        ]
     )
     fragment = "[REDACTED]" if parsed.fragment else ""
     path = "/[REDACTED]" if parsed.path and parsed.path != "/" else parsed.path

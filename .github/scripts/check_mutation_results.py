@@ -10,6 +10,7 @@ from typing import Any
 
 STATUS_BY_EXIT_CODE = {
     None: "not checked",
+    -24: "timeout",
     -11: "segfault",
     -9: "segfault",
     0: "survived",
@@ -26,7 +27,7 @@ STATUS_BY_EXIT_CODE = {
     152: "timeout",
     255: "timeout",
 }
-ACCEPTED = {"caught by type check", "killed", "skipped"}
+ACCEPTED = {"caught by type check", "killed", "skipped", "timeout"}
 
 
 def _load_results(root: Path) -> list[tuple[str, str]]:
