@@ -1,0 +1,33 @@
+name: Strategy proposal
+description: Propose a reproducible authorized-testing strategy
+title: "[Strategy] "
+labels: [enhancement, strategy]
+body:
+  - type: textarea
+    id: property
+    attributes:
+      label: Security property
+      description: What property should remain true?
+    validations:
+      required: true
+  - type: textarea
+    id: attack
+    attributes:
+      label: Attack model
+      description: Describe the trust boundary and attacker capability.
+    validations:
+      required: true
+  - type: textarea
+    id: oracle
+    attributes:
+      label: Success oracle
+      description: How can success be measured without relying only on refusal wording?
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: The proposal can be developed and tested with synthetic or intentionally vulnerable fixtures.
+          required: true

@@ -1,0 +1,485 @@
+"""Typed value objects used throughout the toolkit."""
+
+from __future__ import annotations
+
+import hashlib
+import math
+from collections.abc import Mapping, Sequence
+from dataclasses import asdict, dataclass, field
+from enum import Enum
+from typing import Any, Protocol
+
+from advent_prompt_pwn.validation import validate_json_value
+
+
+class Role(str, Enum):
+    """Supported chat message roles."""
+
+    SYSTEM = "system"
+    USER = "user"
+    ASSISTANT = "assistant"
+    TOOL = "tool"
+
+
+class Severity(str, Enum):
+    """Practitioner-assigned severity for a test objective."""
+
+    INFO = "info"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+@dataclass(frozen=True, slots=True)
+class Message:
+    """One message in a model conversation."""
+
+    role: Role
+    content: str
+    name: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "role", Role(self.role))
+        if not self.content:
+            raise ValueError("message content must not be empty")
+
+    def to_dict(self) -> dict[str, str]:
+        value = {"role": self.role.value, "content": self.content}
+        if self.name:
+            value["name"] = self.name
+        return value
+
+
+@dataclass(frozen=True, slots=True)
+class ToolCall:
+    """Normalized model tool call."""
+
+    name: str
+    arguments: str
+    call_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.name, str):
+            raise ValueError("tool-call name must be a string")
+        if not isinstance(self.arguments, str):
+            raise ValueError("tool-call arguments must be a string")
+        if self.call_id is not None and not isinstance(self.call_id, str):
+            raise ValueError("tool-call id must be a string or null")
+
+
+@dataclass(frozen=True, slots=True)
+class TargetResponse:
+    """Normalized response returned by a target adapter."""
+
+    content: str
+    model: str | None = None
+    finish_reason: str | None = None
+    latency_ms: float | None = None
+    usage: Mapping[str, int] = field(default_factory=dict)
+    tool_calls: tuple[ToolCall, ...] = ()
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.content, str):
+            raise ValueError("target response content must be a string")
+        for label, value in (("model", self.model), ("finish reason", self.finish_reason)):
+            if value is not None and not isinstance(value, str):
+                raise ValueError(f"target response {label} must be a string or null")
+        if self.latency_ms is not None and (
+            not isinstance(self.latency_ms, (int, float))
+            or isinstance(self.latency_ms, bool)
+            or not math.isfinite(self.latency_ms)
+            or self.latency_ms < 0
+        ):
+            raise ValueError("target response latency must be a finite non-negative number")
+        if not isinstance(self.usage, Mapping) or any(
+            not isinstance(key, str)
+            or not isinstance(value, int)
+            or isinstance(value, bool)
+            or value < 0
+            for key, value in self.usage.items()
+        ):
+            raise ValueError("target response usage must map strings to non-negative integers")
+        if not isinstance(self.tool_calls, tuple) or any(
+            not isinstance(call, ToolCall) for call in self.tool_calls
+        ):
+            raise ValueError("target response tool calls must be a tuple of ToolCall values")
+        if not isinstance(self.metadata, Mapping):
+            raise ValueError("target response metadata must be a mapping")
+        validate_json_value(self.metadata, label="target response metadata")
+        object.__setattr__(self, "usage", dict(self.usage))
+        object.__setattr__(self, "metadata", dict(self.metadata))
+
+
+class OracleProtocol(Protocol):
+    """Structural protocol that avoids a circular import."""
+
+    name: str
+
+    def evaluate(
+        self, case: AttackCase, variant: AttackVariant, response: TargetResponse
+    ) -> OracleResult: ...
+
+
+@dataclass(frozen=True, slots=True)
+class AttackCase:
+    """A bounded adversarial objective and its success oracle."""
+
+    case_id: str
+    name: str
+    prompt: str
+    oracle: OracleProtocol
+    system_prompt: str | None = None
+    objective: str = ""
+    tags: tuple[str, ...] = ()
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+    severity: Severity = Severity.MEDIUM
+
+    def __post_init__(self) -> None:
+        if not self.case_id.strip():
+            raise ValueError("case_id must not be empty")
+        if not self.name.strip():
+            raise ValueError("case name must not be empty")
+        if not self.prompt.strip():
+            raise ValueError("case prompt must not be empty")
+        object.__setattr__(self, "severity", Severity(self.severity))
+
+
+@dataclass(frozen=True, slots=True)
+class AttackVariant:
+    """Messages generated by a strategy for one case."""
+
+    variant_id: str
+    case_id: str
+    strategy: str
+    messages: tuple[Message, ...]
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.messages:
+            raise ValueError("an attack variant requires at least one message")
+
+
+@dataclass(frozen=True, slots=True)
+class OracleResult:
+    """Oracle decision. Success means the adversarial objective was observed."""
+
+    success: bool
+    reason: str
+    score: float = 1.0
+    evidence: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.success, bool):
+            raise ValueError("oracle success must be true or false")
+        if not isinstance(self.reason, str):
+            raise ValueError("oracle reason must be a string")
+        if (
+            not isinstance(self.score, (int, float))
+            or isinstance(self.score, bool)
+            or not math.isfinite(self.score)
+            or not 0.0 <= self.score <= 1.0
+        ):
+            raise ValueError("oracle score must be between 0 and 1")
+        if not isinstance(self.evidence, Mapping):
+            raise ValueError("oracle evidence must be a mapping")
+        validate_json_value(self.evidence, label="oracle evidence")
+        object.__setattr__(self, "evidence", dict(self.evidence))
+
+
+@dataclass(frozen=True, slots=True)
+class AttemptResult:
+    """Complete evidence for one target request."""
+
+    case_id: str
+    case_name: str
+    variant_id: str
+    strategy: str
+    messages: tuple[Message, ...]
+    response: TargetResponse | None
+    oracle: OracleResult | None
+    started_at: str
+    evidence_sha256: str
+    error: str | None = None
+    tags: tuple[str, ...] = ()
+    completed_at: str = ""
+    duration_ms: float | None = None
+    request_attempts: int = 1
+    severity: Severity = Severity.MEDIUM
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.request_attempts < 1:
+            raise ValueError("request_attempts must be positive")
+        if self.duration_ms is not None and self.duration_ms < 0:
+            raise ValueError("duration_ms must not be negative")
+        object.__setattr__(self, "severity", Severity(self.severity))
+
+    @property
+    def attack_succeeded(self) -> bool:
+        return bool(self.oracle and self.oracle.success)
+
+    @property
+    def finding_id(self) -> str:
+        """Stable finding identifier shared by variants of the same case."""
+
+        digest = hashlib.sha256(self.case_id.encode("utf-8")).hexdigest()[:32].upper()
+        return f"APPWN-{digest}"
+
+    def to_dict(self) -> dict[str, Any]:
+        value = asdict(self)
+        value["severity"] = self.severity.value
+        value["finding_id"] = self.finding_id
+        return value
+
+
+@dataclass(frozen=True, slots=True)
+class Finding:
+    """Deduplicated practitioner-facing finding assembled from successful attempts."""
+
+    finding_id: str
+    case_id: str
+    title: str
+    severity: Severity
+    reason: str
+    occurrence_count: int
+    strategies: tuple[str, ...]
+    variant_ids: tuple[str, ...]
+    evidence_sha256: tuple[str, ...]
+    tags: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        value = asdict(self)
+        value["severity"] = self.severity.value
+        return value
+
+
+@dataclass(frozen=True, slots=True)
+class TrialStatistic:
+    """Observed outcomes for repeated executions of one generated variant."""
+
+    case_id: str
+    base_variant_id: str
+    strategy: str
+    planned_trials: int
+    completed_trials: int
+    evaluated_trials: int
+    successes: int
+    errors: int
+    success_rate: float
+    confidence_low_95: float
+    confidence_high_95: float
+    consistency: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True, slots=True)
+class RunReport:
+    """Results and reproducibility metadata for one run."""
+
+    run_id: str
+    target_name: str
+    target_endpoint: str
+    started_at: str
+    completed_at: str
+    seed: int
+    attempts: tuple[AttemptResult, ...]
+    authorization_reference: str | None = None
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+    schema_version: int = 1
+    tool_version: str = ""
+    engagement_id: str | None = None
+    corpus_sha256: str | None = None
+    request_count: int = 0
+    integrity_sha256: str = ""
+
+    def __post_init__(self) -> None:
+        if self.schema_version != 1:
+            raise ValueError("unsupported run report schema version")
+        if self.request_count < 0:
+            raise ValueError("request_count must not be negative")
+
+    @property
+    def attack_successes(self) -> int:
+        return sum(attempt.attack_succeeded for attempt in self.attempts)
+
+    @property
+    def errors(self) -> int:
+        return sum(attempt.error is not None for attempt in self.attempts)
+
+    @property
+    def security_passes(self) -> int:
+        return len(self.attempts) - self.attack_successes - self.errors
+
+    @property
+    def attack_success_rate(self) -> float:
+        evaluated = len(self.attempts) - self.errors
+        return self.attack_successes / evaluated if evaluated else 0.0
+
+    @property
+    def findings(self) -> tuple[Finding, ...]:
+        """Return successful attempts deduplicated by test case."""
+
+        grouped: dict[str, list[AttemptResult]] = {}
+        for attempt in self.attempts:
+            if attempt.attack_succeeded:
+                grouped.setdefault(attempt.case_id, []).append(attempt)
+        findings: list[Finding] = []
+        for case_id, attempts in grouped.items():
+            first = attempts[0]
+            reason = first.oracle.reason if first.oracle else "adversarial objective observed"
+            findings.append(
+                Finding(
+                    finding_id=first.finding_id,
+                    case_id=case_id,
+                    title=first.case_name,
+                    severity=max(
+                        (attempt.severity for attempt in attempts),
+                        key=_severity_rank,
+                    ),
+                    reason=reason,
+                    occurrence_count=len(attempts),
+                    strategies=tuple(sorted({attempt.strategy for attempt in attempts})),
+                    variant_ids=tuple(attempt.variant_id for attempt in attempts),
+                    evidence_sha256=tuple(attempt.evidence_sha256 for attempt in attempts),
+                    tags=tuple(sorted({tag for attempt in attempts for tag in attempt.tags})),
+                )
+            )
+        return tuple(
+            sorted(
+                findings,
+                key=lambda item: (-_severity_rank(item.severity), item.case_id),
+            )
+        )
+
+    @property
+    def trial_statistics(self) -> tuple[TrialStatistic, ...]:
+        """Summarize repeated trials with Wilson 95 percent confidence intervals."""
+
+        grouped: dict[tuple[str, str], list[AttemptResult]] = {}
+        planned: dict[tuple[str, str], int] = {}
+        for attempt in self.attempts:
+            descriptor = _trial_descriptor(attempt)
+            if descriptor is None:
+                continue
+            base_variant_id, _index, total = descriptor
+            key = (attempt.case_id, base_variant_id)
+            grouped.setdefault(key, []).append(attempt)
+            planned[key] = max(planned.get(key, 0), total)
+
+        statistics: list[TrialStatistic] = []
+        for key, attempts in grouped.items():
+            evaluated = [attempt for attempt in attempts if attempt.error is None]
+            successes = sum(attempt.attack_succeeded for attempt in evaluated)
+            lower, upper = _wilson_interval(successes, len(evaluated))
+            if not evaluated:
+                consistency = "inconclusive"
+            elif successes == 0:
+                consistency = "no_observed_success"
+            elif successes == len(evaluated):
+                consistency = "consistent_success"
+            else:
+                consistency = "mixed"
+            statistics.append(
+                TrialStatistic(
+                    case_id=key[0],
+                    base_variant_id=key[1],
+                    strategy=attempts[0].strategy,
+                    planned_trials=planned[key],
+                    completed_trials=len(attempts),
+                    evaluated_trials=len(evaluated),
+                    successes=successes,
+                    errors=len(attempts) - len(evaluated),
+                    success_rate=successes / len(evaluated) if evaluated else 0.0,
+                    confidence_low_95=lower,
+                    confidence_high_95=upper,
+                    consistency=consistency,
+                )
+            )
+        return tuple(sorted(statistics, key=lambda item: (item.case_id, item.base_variant_id)))
+
+    def to_dict(self) -> dict[str, Any]:
+        value = asdict(self)
+        value["attempts"] = [attempt.to_dict() for attempt in self.attempts]
+        value["findings"] = [finding.to_dict() for finding in self.findings]
+        summary: dict[str, Any] = {
+            "total": len(self.attempts),
+            "attack_successes": self.attack_successes,
+            "security_passes": self.security_passes,
+            "errors": self.errors,
+            "attack_success_rate": self.attack_success_rate,
+            "findings": len(self.findings),
+            "requests": self.request_count,
+            "severity_counts": {
+                severity.value: sum(finding.severity is severity for finding in self.findings)
+                for severity in Severity
+            },
+        }
+        trial_statistics = self.trial_statistics
+        if trial_statistics:
+            summary["trial_analysis"] = {
+                "method": "wilson_score_95",
+                "groups": [statistic.to_dict() for statistic in trial_statistics],
+                "mixed_groups": sum(
+                    statistic.consistency == "mixed" for statistic in trial_statistics
+                ),
+            }
+        value["summary"] = summary
+        return value
+
+
+def _trial_descriptor(attempt: AttemptResult) -> tuple[str, int, int] | None:
+    variant_metadata = attempt.metadata.get("variant")
+    if not isinstance(variant_metadata, Mapping):
+        return None
+    trial = variant_metadata.get("advent_prompt_pwn_trial")
+    if not isinstance(trial, Mapping):
+        return None
+    base_variant_id = trial.get("base_variant_id")
+    index = trial.get("index")
+    total = trial.get("total")
+    if (
+        not isinstance(base_variant_id, str)
+        or not isinstance(index, int)
+        or isinstance(index, bool)
+        or not isinstance(total, int)
+        or isinstance(total, bool)
+        or index < 1
+        or total < index
+    ):
+        return None
+    return base_variant_id, index, total
+
+
+def _wilson_interval(successes: int, trials: int) -> tuple[float, float]:
+    if trials == 0:
+        return 0.0, 0.0
+    z = 1.959963984540054
+    proportion = successes / trials
+    denominator = 1 + (z * z / trials)
+    center = (proportion + (z * z / (2 * trials))) / denominator
+    margin = (
+        z
+        * math.sqrt((proportion * (1 - proportion) / trials) + (z * z / (4 * trials * trials)))
+        / denominator
+    )
+    return max(0.0, center - margin), min(1.0, center + margin)
+
+
+def _severity_rank(severity: Severity) -> int:
+    return {
+        Severity.INFO: 0,
+        Severity.LOW: 1,
+        Severity.MEDIUM: 2,
+        Severity.HIGH: 3,
+        Severity.CRITICAL: 4,
+    }[severity]
+
+
+def ensure_messages(messages: Sequence[Message]) -> tuple[Message, ...]:
+    """Normalize message sequences for adapters and strategies."""
+
+    return tuple(messages)

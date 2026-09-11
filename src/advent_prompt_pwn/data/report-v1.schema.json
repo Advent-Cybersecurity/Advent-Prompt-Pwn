@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:advent-prompt-pwn:schema:report:v1",
+  "title": "advent-prompt-pwn run report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id", "target_name", "target_endpoint", "started_at", "completed_at", "seed",
+    "attempts", "authorization_reference", "metadata", "schema_version", "tool_version",
+    "engagement_id", "corpus_sha256", "request_count", "integrity_sha256", "findings",
+    "summary"
+  ],
+  "properties": {
+    "run_id": {"type": "string", "minLength": 1},
+    "target_name": {"type": "string", "minLength": 1},
+    "target_endpoint": {"type": "string", "minLength": 1},
+    "started_at": {"type": "string", "minLength": 1},
+    "completed_at": {"type": "string", "minLength": 1},
+    "seed": {"type": "integer"},
+    "attempts": {"type": "array", "items": {"$ref": "#/$defs/attempt"}},
+    "authorization_reference": {"type": ["string", "null"]},
+    "metadata": {"type": "object"},
+    "schema_version": {"const": 1},
+    "tool_version": {"type": "string"},
+    "engagement_id": {"type": ["string", "null"]},
+    "corpus_sha256": {
+      "anyOf": [
+        {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        {"type": "null"}
+      ]
+    },
+    "request_count": {"type": "integer", "minimum": 0},
+    "integrity_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "findings": {"type": "array", "items": {"$ref": "#/$defs/finding"}},
+    "summary": {"$ref": "#/$defs/summary"}
+  },
+  "$defs": {
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "content", "name"],
+      "properties": {
+        "role": {"enum": ["system", "user", "assistant", "tool"]},
+        "content": {"type": "string"},
+        "name": {"type": ["string", "null"]}
+      }
+    },
+    "toolCall": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "arguments", "call_id"],
+      "properties": {
+        "name": {"type": "string"},
+        "arguments": {"type": "string"},
+        "call_id": {"type": ["string", "null"]}
+      }
+    },
+    "targetResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content", "model", "finish_reason", "latency_ms", "usage", "tool_calls", "metadata"],
+      "properties": {
+        "content": {"type": "string"},
+        "model": {"type": ["string", "null"]},
+        "finish_reason": {"type": ["string", "null"]},
+        "latency_ms": {"type": ["number", "null"], "minimum": 0},
+        "usage": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+        "tool_calls": {"type": "array", "items": {"$ref": "#/$defs/toolCall"}},
+        "metadata": {"type": "object"}
+      }
+    },
+    "oracle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["success", "reason", "score", "evidence"],
+      "properties": {
+        "success": {"type": "boolean"},
+        "reason": {"type": "string"},
+        "score": {"type": "number", "minimum": 0, "maximum": 1},
+        "evidence": {"type": "object"}
+      }
+    },
+    "attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "case_id", "case_name", "variant_id", "strategy", "messages", "response", "oracle",
+        "started_at", "evidence_sha256", "error", "tags", "completed_at", "duration_ms",
+        "request_attempts", "severity", "metadata", "finding_id"
+      ],
+      "properties": {
+        "case_id": {"type": "string", "minLength": 1},
+        "case_name": {"type": "string", "minLength": 1},
+        "variant_id": {"type": "string", "minLength": 1},
+        "strategy": {"type": "string", "minLength": 1},
+        "messages": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/message"}},
+        "response": {"anyOf": [{"$ref": "#/$defs/targetResponse"}, {"type": "null"}]},
+        "oracle": {"anyOf": [{"$ref": "#/$defs/oracle"}, {"type": "null"}]},
+        "started_at": {"type": "string", "minLength": 1},
+        "evidence_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "error": {"type": ["string", "null"]},
+        "tags": {"type": "array", "items": {"type": "string"}},
+        "completed_at": {"type": "string"},
+        "duration_ms": {"type": ["number", "null"], "minimum": 0},
+        "request_attempts": {"type": "integer", "minimum": 1},
+        "severity": {"enum": ["info", "low", "medium", "high", "critical"]},
+        "metadata": {"type": "object"},
+        "finding_id": {"type": "string", "pattern": "^APPWN-[0-9A-F]{32}$"}
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finding_id", "case_id", "title", "severity", "reason", "occurrence_count",
+        "strategies", "variant_ids", "evidence_sha256", "tags"
+      ],
+      "properties": {
+        "finding_id": {"type": "string", "pattern": "^APPWN-[0-9A-F]{32}$"},
+        "case_id": {"type": "string", "minLength": 1},
+        "title": {"type": "string"},
+        "severity": {"enum": ["info", "low", "medium", "high", "critical"]},
+        "reason": {"type": "string"},
+        "occurrence_count": {"type": "integer", "minimum": 1},
+        "strategies": {"type": "array", "items": {"type": "string"}},
+        "variant_ids": {"type": "array", "items": {"type": "string"}},
+        "evidence_sha256": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        },
+        "tags": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total", "attack_successes", "security_passes", "errors", "attack_success_rate",
+        "findings", "requests", "severity_counts"
+      ],
+      "properties": {
+        "total": {"type": "integer", "minimum": 0},
+        "attack_successes": {"type": "integer", "minimum": 0},
+        "security_passes": {"type": "integer", "minimum": 0},
+        "errors": {"type": "integer", "minimum": 0},
+        "attack_success_rate": {"type": "number", "minimum": 0, "maximum": 1},
+        "findings": {"type": "integer", "minimum": 0},
+        "requests": {"type": "integer", "minimum": 0},
+        "severity_counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["info", "low", "medium", "high", "critical"],
+          "properties": {
+            "info": {"type": "integer", "minimum": 0},
+            "low": {"type": "integer", "minimum": 0},
+            "medium": {"type": "integer", "minimum": 0},
+            "high": {"type": "integer", "minimum": 0},
+            "critical": {"type": "integer", "minimum": 0}
+          }
+        },
+        "trial_analysis": {"type": "object"}
+      }
+    }
+  }
+}

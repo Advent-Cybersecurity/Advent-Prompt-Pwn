@@ -1,0 +1,58 @@
+version: 1
+engagement:
+  id: client-lab-001
+  name: Authorized AI application assessment
+  owner: Advent Cybersecurity LLC
+  authorization_reference: SOW-REPLACE-BEFORE-USE
+corpus: cases/engagement.yaml
+target:
+  type: http-json
+  name: client-ai-application
+  endpoint: https://ai-client.example.test/api/chat
+  request_mode: messages
+  request_field: messages
+  response_path: response.content
+  tool_calls_path: response.tool_calls
+  headers_env:
+    Authorization: ADVENT_TARGET_AUTH_HEADER
+  extra_body_file: target-extra-body.json
+  max_response_bytes: 2000000
+scope:
+  mode: authorized_remote
+  allowed_hosts: [ai-client.example.test]
+  allowed_ports: [443]
+  max_requests: 500
+  requests_per_minute: 60
+  max_concurrency: 4
+  allow_insecure_http: false
+  allowed_query_parameters: []
+  allow_unpinned_dns: true
+execution:
+  strategies:
+    - direct
+    - instruction_override
+    - delimiter
+    - encoding
+    - role_confusion
+    - multi_turn
+    - indirect_fixture
+  seed: 42
+  timeout_seconds: 30
+  retries: 2
+  retry_backoff_seconds: 0.5
+  concurrency: 4
+  max_variants_per_case: 50
+  checkpoint_interval: 10
+  stop_on_error: false
+  rerun_errors: true
+  include_tags: []
+  exclude_tags: []
+  case_ids: []
+  redact_env: [ADVENT_TARGET_AUTH_HEADER]
+  checkpoint_hmac_env: APPWN_CHECKPOINT_HMAC_KEY
+  max_evidence_bytes: 64000000
+output:
+  directory: reports/client-lab-001
+  checkpoint_file: reports/client-lab-001.checkpoint.json
+  formats: [json, jsonl, markdown, html, junit, sarif]
+  fail_on_findings: true
