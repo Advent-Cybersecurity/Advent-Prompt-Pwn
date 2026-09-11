@@ -7,9 +7,18 @@ import hmac
 import json
 from dataclasses import asdict, replace
 from enum import Enum
+from functools import partial
 from typing import Any
 
 from advent_prompt_pwn.core.models import AttemptResult, RunReport
+
+_canonical_json = partial(
+    json.dumps,
+    ensure_ascii=False,
+    sort_keys=True,
+    separators=(",", ":"),
+    allow_nan=False,
+)
 
 
 def _normalize(value: Any) -> Any:
@@ -25,13 +34,7 @@ def _normalize(value: Any) -> Any:
 def canonical_sha256(value: Any) -> str:
     """Hash a JSON-compatible value using a stable canonical encoding."""
 
-    encoded = json.dumps(
-        _normalize(value),
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,  # pragma: no mutate - None is an equivalent false value to json.dumps
-    ).encode()
+    encoded = _canonical_json(_normalize(value)).encode()
     return hashlib.sha256(encoded).hexdigest()
 
 
