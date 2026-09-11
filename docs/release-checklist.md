@@ -21,18 +21,19 @@
 
 ## Registry setup
 
-- [ ] Reserve the PyPI project.
-- [ ] Configure the GitHub `pypi` environment with required reviewer approval.
-- [ ] Configure PyPI Trusted Publishing for the exact owner, repository, workflow, and environment.
-- [ ] Enable GitHub private vulnerability reporting and branch protection.
+- [x] Reserve the PyPI project.
+- [x] Configure the GitHub `pypi` environment with required reviewer approval.
+- [x] Configure PyPI Trusted Publishing for the exact owner, repository, workflow, and environment.
+- [x] Enable GitHub private vulnerability reporting.
+- [ ] Enable branch protection after the final release follow-up commit passes CI.
 
 ## Release
 
-- [ ] Create a signed `vX.Y.Z` tag.
-- [ ] Verify the CI build artifact before approving publication.
-- [ ] Verify the PyPI metadata and attestations.
+- [x] Create a signed `vX.Y.Z` tag.
+- [x] Verify the CI build artifact before approving publication.
+- [x] Verify the PyPI metadata and attestations.
 - [ ] Install the published wheel on Windows and Linux.
-- [ ] Publish checksums and release notes.
+- [x] Publish checksums and release notes.
 
 ## After release
 
