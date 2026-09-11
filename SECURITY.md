@@ -2,11 +2,11 @@
 
 ## Supported versions
 
-Version 1.x receives security fixes. Before a public release exists, fixes are applied to the latest revision on the default branch.
+Version 1.x receives security fixes. Fixes are applied to the latest supported release and the default branch.
 
 ## Reporting a vulnerability
 
-Please use the repository's private vulnerability-reporting feature. If the repository has not been published yet, contact Advent Cybersecurity through the contact method listed at [adventcybersecurity.com](https://www.adventcybersecurity.com/).
+Please use the repository's private vulnerability-reporting feature. If GitHub reporting is unavailable, contact Advent Cybersecurity through the contact method listed at [adventcybersecurity.com](https://www.adventcybersecurity.com/).
 
 Include:
 

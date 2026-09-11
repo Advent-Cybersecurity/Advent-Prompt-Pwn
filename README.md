@@ -4,8 +4,8 @@
 
 The project is maintained by [Advent Cybersecurity](https://www.adventcybersecurity.com/).
 
-Release status: version 1.0.0 is locally release-qualified for authorized engagement use. The
-first public PyPI release has not been published yet.
+Release status: version 1.0.0 is the first public release and is qualified for authorized
+engagement use.
 
 ## Capabilities
 
@@ -28,16 +28,16 @@ An oracle success means its configured adversarial objective was observed. It is
 
 ## Installation
 
-Python 3.10 or newer is required. Until the first public release, install the locally built wheel:
-
-```bash
-python -m pip install dist/advent_prompt_pwn-1.0.0-py3-none-any.whl
-```
-
-After publication to PyPI:
+Python 3.10 or newer is required. Install from PyPI:
 
 ```bash
 python -m pip install advent-prompt-pwn
+```
+
+For release verification or offline installation, install the checked local wheel:
+
+```bash
+python -m pip install dist/advent_prompt_pwn-1.0.0-py3-none-any.whl
 ```
 
 The distribution and CLI use hyphens. Python imports use underscores:

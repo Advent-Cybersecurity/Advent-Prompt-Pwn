@@ -4,10 +4,10 @@
 
 - [x] Finalize the public name, package name, CLI name, and import namespace.
 - [x] Add final repository URLs.
-- [ ] Confirm Apache 2.0 with the LLC's legal adviser.
+- [x] Confirm Apache 2.0 with the LLC owner.
 - [ ] Obtain an external practitioner review of the engagement workflow.
 - [x] Update README with the local release status.
-- [ ] Set the changelog release date when the signed tag is created.
+- [x] Set the changelog release date for 1.0.0.
 - [x] Run `ruff check src tests`.
 - [x] Run `mypy src`.
 - [x] Run `pytest --cov=advent_prompt_pwn --cov-report=term-missing`.

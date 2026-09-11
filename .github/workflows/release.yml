@@ -59,7 +59,7 @@ jobs:
           retention-days: 14
 
   github-release:
-    needs: build
+    needs: [build, publish]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -89,3 +89,6 @@ jobs:
           name: python-distributions
           path: dist/
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          attestations: true
+          print-hash: true

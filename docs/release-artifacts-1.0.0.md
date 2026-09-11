@@ -11,11 +11,20 @@ byte-identical across the source tree, wheel, and source distribution.
 
 | Artifact | SHA-256 |
 | --- | --- |
-| `advent_prompt_pwn-1.0.0-py3-none-any.whl` | `97e79def08f5c413e9c6d5836ed8f067e32677ce055752d92e1a8f1d6a9896eb` |
-| `advent_prompt_pwn-1.0.0.tar.gz` | `8a4c014f7326a8c7a768069423051934ae058dc992820c5d4f0b4f49432de210` |
+| `advent_prompt_pwn-1.0.0-py3-none-any.whl` | `5a6db3e06a64b1b97c6516b54cf3d62916e30c8563e381aded2830f9584bbc36` |
+| `advent_prompt_pwn-1.0.0.tar.gz` | `7af0c0ce7f60ab692b3a7b8df1b57c4c60e4f05900b8158063b91142fb72cbf7` |
 
 This hash record is intentionally excluded from the source archive so that the archive does not
 contain a self-referential digest.
+
+The `v1.0.0` Git tag is SSH-signed with the release key recorded in `docs/allowed-signers`.
+Its ED25519 fingerprint is `SHA256:Ak8Zg23ihW/RCkdMsWjfl+ozrHK4JzBHY8P3rvzU23Q`.
+Verify it from a clone with:
+
+```bash
+git config gpg.ssh.allowedSignersFile docs/allowed-signers
+git verify-tag v1.0.0
+```
 
 Recompute before signing or publishing:
 
