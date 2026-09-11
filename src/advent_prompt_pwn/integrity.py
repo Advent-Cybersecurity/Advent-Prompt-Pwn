@@ -31,7 +31,7 @@ def canonical_sha256(value: Any) -> str:
         sort_keys=True,
         separators=(",", ":"),
         allow_nan=False,  # pragma: no mutate - None is an equivalent false value to json.dumps
-    ).encode("utf-8")  # pragma: no mutate - Python codec names are case-insensitive
+    ).encode()
     return hashlib.sha256(encoded).hexdigest()
 
 

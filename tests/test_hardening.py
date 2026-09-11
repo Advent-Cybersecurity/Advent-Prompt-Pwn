@@ -355,6 +355,10 @@ def test_mapping_key_redaction_handles_collisions() -> None:
 
 
 def test_redaction_exact_contract_for_overlaps_markers_patterns_and_containers() -> None:
+    assert redact_text("left [REDACTED] right", ("absent-secret",)) == (
+        "left [REDACTED] right"
+    )
+    assert redact_text("az", ("z", "az")) == "[REDACTED]"
     assert redact_text("abcdef", ("abc", "abcdef")) == "[REDACTED]"
     assert redact_text("topsecret[REDACTED]", ("topsecret",)) == "[REDACTED][REDACTED]"
     assert (
@@ -380,6 +384,8 @@ def test_integrity_hash_contract_is_compact_unicode_and_strict() -> None:
     report = _report()
     assert attempt_sha256(report.attempts[0]) == report.attempts[0].evidence_sha256
     assert report_sha256(report) == report.integrity_sha256
+    changed_report = _report("different response")
+    assert changed_report.attempts[0].evidence_sha256 != report.attempts[0].evidence_sha256
 
 
 def test_runtime_models_reject_malformed_adapter_and_oracle_values() -> None:
@@ -409,6 +415,11 @@ def test_endpoint_evidence_redacts_query_values_and_fragments() -> None:
     assert exact == (
         "https://[REDACTED].example.test/[REDACTED]?empty=%5BREDACTED%5D&"
         "%5BREDACTED%5D_name=%5BREDACTED%5D&tenant=%5BREDACTED%5D#[REDACTED]"
+    )
+    assert redact_endpoint("https://example.test/") == "https://example.test/"
+    assert redact_endpoint("https://example.test") == "https://example.test"
+    assert redact_endpoint("https://example.test", ("https",)) == (
+        "[REDACTED]://example.test"
     )
 
 
