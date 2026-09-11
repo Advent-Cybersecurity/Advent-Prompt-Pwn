@@ -25,7 +25,7 @@
 - [x] Configure the GitHub `pypi` environment with required reviewer approval.
 - [x] Configure PyPI Trusted Publishing for the exact owner, repository, workflow, and environment.
 - [x] Enable GitHub private vulnerability reporting.
-- [ ] Enable branch protection after the final release follow-up commit passes CI.
+- [x] Enable branch protection after the final release follow-up commit passes CI.
 
 ## Release
 
