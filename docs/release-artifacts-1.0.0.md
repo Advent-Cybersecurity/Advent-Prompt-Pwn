@@ -11,8 +11,8 @@ byte-identical across the source tree, wheel, and source distribution.
 
 | Artifact | SHA-256 |
 | --- | --- |
-| `advent_prompt_pwn-1.0.0-py3-none-any.whl` | `fc3b9c0a75da81de272787c9d6b8cf5fd3e0dc262b2b7cc7f85fb4d4aa095f83` |
-| `advent_prompt_pwn-1.0.0.tar.gz` | `7ed3b91e94794f3dfe0ff5954b1bdb2848e4dedb8de98f5793b73ccc19aee00a` |
+| `advent_prompt_pwn-1.0.0-py3-none-any.whl` | `97e79def08f5c413e9c6d5836ed8f067e32677ce055752d92e1a8f1d6a9896eb` |
+| `advent_prompt_pwn-1.0.0.tar.gz` | `8a4c014f7326a8c7a768069423051934ae058dc992820c5d4f0b4f49432de210` |
 
 This hash record is intentionally excluded from the source archive so that the archive does not
 contain a self-referential digest.

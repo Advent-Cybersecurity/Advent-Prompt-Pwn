@@ -4,6 +4,10 @@ All notable changes are recorded here. The project follows Semantic Versioning.
 
 ## 1.0.0 - Unreleased
 
+### Fixed
+
+- Restored `ContainsAllOracle` initialization compatibility on Python 3.10 through 3.12.
+
 ### Added
 
 - Final project identity: `advent-prompt-pwn` distribution and CLI with `advent_prompt_pwn` imports

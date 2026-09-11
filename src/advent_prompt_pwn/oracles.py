@@ -130,7 +130,7 @@ class ContainsAllOracle(ContainsAnyOracle):
     name: str = "contains_all"
 
     def __init__(self, values: Sequence[str], *, case_sensitive: bool = False) -> None:
-        super().__init__(values, case_sensitive=case_sensitive)
+        ContainsAnyOracle.__init__(self, values, case_sensitive=case_sensitive)
         object.__setattr__(self, "name", "contains_all")
 
     def evaluate(
