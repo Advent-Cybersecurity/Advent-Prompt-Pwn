@@ -8,7 +8,9 @@ signed tag `v1.0.0` and published through PyPI Trusted Publishing. Both artifact
 declared dependencies in separate new virtual environments and passed import, doctor, corpus
 creation, validation, local execution, authenticated checkpoint, resume, comparison, bundle, and
 evidence verification smoke tests. All 35 packaged library files were byte-identical across the
-source tree, wheel, and source distribution.
+source tree, wheel, and source distribution. The wheel downloaded directly from PyPI passed clean
+installation, import, metadata, and doctor checks on hosted Ubuntu and Windows runners. The Windows
+verification also passed the README engagement quickstart and offline evidence-bundle verification.
 
 | Artifact | SHA-256 |
 | --- | --- |

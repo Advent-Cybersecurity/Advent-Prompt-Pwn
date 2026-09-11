@@ -32,12 +32,12 @@
 - [x] Create a signed `vX.Y.Z` tag.
 - [x] Verify the CI build artifact before approving publication.
 - [x] Verify the PyPI metadata and attestations.
-- [ ] Install the published wheel on Windows and Linux.
+- [x] Install the published wheel on Windows and Linux.
 - [x] Publish checksums and release notes.
 
 ## After release
 
-- [ ] Run the README quickstart from the published package.
+- [x] Run the README quickstart from the published package.
 - [ ] Publish the launch post only after install verification.
 - [ ] Watch vulnerability reports, packaging failures, and documentation issues.
 - [ ] Record practitioner feedback in the roadmap.
