@@ -118,6 +118,7 @@ packages = ["advent_prompt_pwn"]
 warn_unreachable = true
 
 [tool.mutmut]
+debug = true
 source_paths = [
   "src/advent_prompt_pwn/core/redaction.py",
   "src/advent_prompt_pwn/integrity.py",
