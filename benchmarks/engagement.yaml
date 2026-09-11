@@ -1,0 +1,43 @@
+version: 1
+engagement:
+  id: benchmark-1-1
+  name: Offline synthetic 1.1 benchmark
+  owner: Advent Cybersecurity LLC
+  authorization_reference: local-synthetic-benchmark
+corpus: corpora/synthetic-v1.yaml
+target:
+  type: fake
+  name: deterministic-safe-baseline
+  fake_response: SAFE_RESPONSE
+scope:
+  mode: local
+  allowed_query_parameters: []
+  allow_unpinned_dns: false
+  pinned_dns: {}
+  not_before: null
+  not_after: null
+  max_requests: 100
+  requests_per_minute: 1000000
+  max_concurrency: 1
+execution:
+  strategies: [direct, mutation, rag_poisoning, multi_turn]
+  seed: 11
+  timeout_seconds: 5
+  retries: 0
+  retry_backoff_seconds: 0
+  concurrency: 1
+  trials_per_variant: 1
+  max_variants_per_case: 20
+  checkpoint_interval: 10
+  stop_on_error: false
+  rerun_errors: true
+  include_tags: [benchmark]
+  exclude_tags: []
+  case_ids: []
+  redact_env: []
+  checkpoint_hmac_env: null
+  max_evidence_bytes: 64000000
+output:
+  directory: reports/benchmark-run
+  formats: [json, markdown, html, sarif]
+  fail_on_findings: true

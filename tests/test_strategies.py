@@ -15,6 +15,8 @@ from advent_prompt_pwn import (
     IndirectFixtureStrategy,
     InstructionOverrideStrategy,
     MultiTurnStrategy,
+    MutationStrategy,
+    RagPoisoningStrategy,
     Role,
     RoleConfusionStrategy,
 )
@@ -70,6 +72,31 @@ def test_multi_turn_strategy_contains_assistant_acknowledgement() -> None:
         Role.ASSISTANT,
         Role.USER,
     ]
+    assert variant.metadata["conversation_mode"] == "prefilled_transcript"
+
+
+def test_mutation_strategy_is_seeded_bounded_and_unique() -> None:
+    first = list(MutationStrategy(4).generate(_case(), random.Random(42)))
+    second = list(MutationStrategy(4).generate(_case(), random.Random(42)))
+    assert [item.messages for item in first] == [item.messages for item in second]
+    assert len(first) == 4
+    assert len({item.messages[-1].content for item in first}) == 4
+    assert all(item.metadata["mutation"] for item in first)
+    with pytest.raises(ValueError, match="between"):
+        MutationStrategy(0)
+
+
+def test_rag_poisoning_strategy_marks_retrieval_boundary() -> None:
+    variants = list(RagPoisoningStrategy().generate(_case(system=None), random.Random(1)))
+    assert len(variants) == 4
+    assert {item.metadata["fixture_type"] for item in variants} == {
+        "csv",
+        "json",
+        "markdown",
+        "xml",
+    }
+    assert all(item.metadata["trust_boundary"] == "retrieval_to_model" for item in variants)
+    assert all("untrusted" in item.messages[0].content for item in variants)
 
 
 def test_encoding_strategy_is_deterministic_and_records_encoding() -> None:
@@ -105,6 +132,8 @@ def test_composite_strategy_deduplicates_messages() -> None:
 
 def test_strategy_registry_lists_and_builds_builtins() -> None:
     assert "direct" in strategy_names(include_plugins=False)
+    assert "mutation" in strategy_names(include_plugins=False)
+    assert "rag_poisoning" in strategy_names(include_plugins=False)
     assert isinstance(get_strategy("direct"), DirectStrategy)
     with pytest.raises(KeyError, match="unknown"):
         get_strategy("missing")

@@ -14,6 +14,8 @@ from advent_prompt_pwn.strategies.builtin import (
     IndirectFixtureStrategy,
     InstructionOverrideStrategy,
     MultiTurnStrategy,
+    MutationStrategy,
+    RagPoisoningStrategy,
     RoleConfusionStrategy,
 )
 
@@ -27,6 +29,8 @@ BUILTIN_STRATEGIES: dict[str, StrategyFactory] = {
     "indirect_document": IndirectDocumentStrategy,
     "instruction_override": InstructionOverrideStrategy,
     "multi_turn": MultiTurnStrategy,
+    "mutation": MutationStrategy,
+    "rag_poisoning": RagPoisoningStrategy,
     "role_confusion": RoleConfusionStrategy,
 }
 

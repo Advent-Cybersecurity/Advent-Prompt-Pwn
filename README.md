@@ -4,16 +4,20 @@
 
 The project is maintained by [Advent Cybersecurity](https://www.adventcybersecurity.com/).
 
-Release status: version 1.0.0 is the first public release and is qualified for authorized
-engagement use.
+Release status: 1.0.0 is the current public release. The default branch is the 1.1.0 beta and is
+qualified for controlled authorized engagement use, but external practitioner review and field
+assessment evidence remain open maturity gates.
 
 ## Capabilities
 
-- Direct, delimiter, instruction-override, encoding, role-confusion, multi-turn, and indirect-content testing
+- Direct, delimiter, instruction-override, encoding, role-confusion, multi-turn, mutation, and RAG-poisoning testing
+- Budget-bound adaptive minimization and score-guided mutation with digest-only candidate records
+- Calibrated semantic judges with explicit external data-boundary acknowledgement
+- Feedback-adaptive live conversations and side-effect-free synthetic tool-use simulation
 - Synthetic system-prompt and RAG canaries
 - Structured JSON and unauthorized tool-call detection
-- OpenAI-compatible, Ollama, custom HTTP JSON, in-memory, and Python callback targets
-- Exact remote-host and port allowlists with independent network and workload grants
+- OpenAI, Azure OpenAI, Anthropic, Gemini, OpenAI-compatible, Ollama, custom HTTP JSON, in-memory, and Python callback targets
+- Exact remote-host and port allowlists, DNS result pins, authorization windows, and independent network and workload grants
 - Request budgets, global rate limits, retry backoff, response-size limits, and bounded concurrency
 - Case filtering, stable finding IDs, severity, and finding deduplication
 - Repeated trials with mixed-outcome detection and Wilson 95% confidence intervals
@@ -37,7 +41,7 @@ python -m pip install advent-prompt-pwn
 For release verification or offline installation, install the checked local wheel:
 
 ```bash
-python -m pip install dist/advent_prompt_pwn-1.0.0-py3-none-any.whl
+python -m pip install dist/advent_prompt_pwn-1.1.0-py3-none-any.whl
 ```
 
 The distribution and CLI use hyphens. Python imports use underscores:
@@ -209,7 +213,15 @@ output:
   fail_on_findings: true
 ```
 
-Remote HTTP is rejected unless `allow_insecure_http: true` is explicitly recorded. DNS hostnames also require `allow_unpinned_dns: true` plus controlled network egress. Query parameters require an explicit `allowed_query_parameters` entry, while credential-like query names and embedded URL credentials are always rejected. Remote manifest values do not authorize themselves. The execution command must independently repeat the authorization reference, network capabilities, and ceilings for requests, rate, concurrency, retries, timeout, trials, variants, response bytes, and evidence bytes. Built-in HTTP clients ignore ambient proxy variables and reject custom `Host` headers.
+Remote HTTP is rejected unless `allow_insecure_http: true` is explicitly recorded. DNS hostnames
+require either `pinned_dns` addresses or `allow_unpinned_dns: true` plus controlled network egress.
+Optional `not_before` and `not_after` timestamps are enforced before every request. Query parameters
+require an explicit `allowed_query_parameters` entry, while credential-like query names and embedded
+URL credentials are always rejected. Remote manifest values do not authorize themselves. The
+execution command must independently repeat the authorization reference, network capabilities, and
+ceilings for requests, rate, concurrency, retries, timeout, trials, variants, response bytes, and
+evidence bytes. Built-in HTTP clients ignore ambient proxy variables and reject custom `Host`
+headers.
 
 Manifest-derived corpus, extra-body, output, and checkpoint paths are confined beneath the
 manifest directory after symlink resolution. Use `--allow-external-paths` only after reviewing
@@ -292,9 +304,10 @@ Use this project only for systems you own, intentionally vulnerable labs, public
 
 Reports can contain sensitive model output. Redaction is defense in depth and cannot recognize every secret. Store bundles as confidential engagement evidence. SHA-256 attempt, report, and bundle hashes detect accidental or unauthorized modification. Checkpoint HMAC authentication prevents forgery when its key remains secret, while the independently retained expected checkpoint digest detects substitution of an older authentic checkpoint. The CLI flushes each checkpoint candidate identity before its atomic write so trusted engagement logs can retain the latest accepted candidate. Saved baseline comparisons authenticate both reports with the same HMAC key. Use a separately authenticated evidence store or signing process when authorship and non-repudiation matter.
 
-Remote DNS names are disabled by default because a hostname allowlist does not pin the connected
-address. When an authorized target requires DNS, record `allow_unpinned_dns: true`, enforce the
-approved destination at the network layer, and use controlled DNS. Prefer an approved IP literal
+Remote DNS names are disabled by default unless approved IP addresses are supplied with
+`pinned_dns`. The resolver result is checked before dispatch. Enforce the same approved destination
+at the network layer to close the remaining resolution-to-connection race. When pins are not
+available, record `allow_unpinned_dns: true` and use controlled DNS. Prefer an approved IP literal
 when the target contract supports it.
 
 See [docs/authorized-use.md](docs/authorized-use.md), [docs/threat-model.md](docs/threat-model.md), the [version 1.0 security review](docs/security-review-1.0.0.md), and [SECURITY.md](SECURITY.md).
@@ -311,7 +324,9 @@ python -m pip_audit
 python -m build
 ```
 
-Version `1.0.0` follows the compatibility policy in [docs/api-compatibility.md](docs/api-compatibility.md).
+Version `1.1.0` follows the compatibility policy in [docs/api-compatibility.md](docs/api-compatibility.md).
+Versioned documentation is built from [mkdocs.yml](mkdocs.yml) and published through the dedicated
+GitHub Pages workflow.
 
 ## License
 

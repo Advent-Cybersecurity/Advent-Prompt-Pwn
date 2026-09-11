@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 
 from advent_prompt_pwn import Scope
@@ -95,6 +97,81 @@ def test_authorized_scope_requires_explicit_unpinned_dns_opt_in() -> None:
     with pytest.raises(ScopeViolation, match="unpinned-DNS"):
         scope.assert_endpoint("https://lab.example.test/v1")
     Scope.authorized(["192.0.2.10"], "ENG-IP").assert_endpoint("https://192.0.2.10/v1")
+
+
+def test_authorized_scope_verifies_every_resolved_address_against_dns_pins(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import advent_prompt_pwn.core.scope as scope_module
+
+    answers = [
+        (2, 1, 6, "", ("192.0.2.10", 443)),
+        (2, 1, 6, "", ("192.0.2.11", 443)),
+    ]
+    monkeypatch.setattr(scope_module.socket, "getaddrinfo", lambda *args, **kwargs: answers)
+    scope = Scope.authorized(
+        ["ai.example.test"],
+        "ENG-PIN",
+        pinned_dns={"AI.EXAMPLE.TEST": ("192.0.2.10", "192.0.2.11")},
+    )
+    scope.assert_endpoint("https://ai.example.test/v1")
+    assert scope.pinned_dns["ai.example.test"] == ("192.0.2.10", "192.0.2.11")
+
+    answers.append((2, 1, 6, "", ("198.51.100.8", 443)))
+    with pytest.raises(ScopeViolation, match="approved IP pins"):
+        scope.assert_endpoint("https://ai.example.test/v1")
+
+    monkeypatch.setattr(
+        scope_module.socket,
+        "getaddrinfo",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("synthetic")),
+    )
+    with pytest.raises(ScopeViolation, match="resolution failed"):
+        scope.assert_endpoint("https://ai.example.test/v1")
+    scope.assert_endpoint("https://ai.example.test/v1", verify_dns=False)
+
+
+def test_scope_rejects_invalid_dns_pins() -> None:
+    with pytest.raises(ValueError, match="present in allowed_hosts"):
+        Scope.authorized(
+            ["ai.example.test"],
+            "ENG-PIN",
+            pinned_dns={"other.example.test": ("192.0.2.10",)},
+        )
+    with pytest.raises(ValueError, match="IP addresses"):
+        Scope.authorized(
+            ["ai.example.test"],
+            "ENG-PIN",
+            pinned_dns={"ai.example.test": ("not-an-ip",)},
+        )
+    with pytest.raises(ValueError, match="at least one"):
+        Scope.authorized(
+            ["ai.example.test"],
+            "ENG-PIN",
+            pinned_dns={"ai.example.test": ()},
+        )
+
+
+def test_scope_enforces_timezone_aware_authorization_window() -> None:
+    scope = Scope.local_only(
+        not_before="2026-09-11T10:00:00Z",
+        not_after="2026-09-11T11:00:00+00:00",
+    )
+    scope.assert_active(datetime(2026, 9, 11, 10, 30, tzinfo=timezone.utc))
+    with pytest.raises(ScopeViolation, match="has not started"):
+        scope.assert_active(datetime(2026, 9, 11, 9, 59, tzinfo=timezone.utc))
+    with pytest.raises(ScopeViolation, match="has ended"):
+        scope.assert_active(datetime(2026, 9, 11, 11, 0, tzinfo=timezone.utc))
+    with pytest.raises(ValueError, match="timezone-aware"):
+        scope.assert_active(datetime(2026, 9, 11, 10, 30))
+
+    with pytest.raises(ValueError, match="timezone offset"):
+        Scope.local_only(not_before="2026-09-11T10:00:00")
+    with pytest.raises(ValueError, match="earlier"):
+        Scope.local_only(
+            not_before="2026-09-11T11:00:00Z",
+            not_after="2026-09-11T10:00:00Z",
+        )
 
 
 def test_scope_query_parameters_require_noncredential_allowlist() -> None:

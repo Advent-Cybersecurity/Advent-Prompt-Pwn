@@ -16,12 +16,20 @@ Remote scope uses exact host matching. Subdomains are not included automatically
 
 Remote engagement manifests require explicit ports. Remote HTTP requires an insecure-transport opt-in. Query parameters require an explicit allowlist, and credentials embedded in URLs or credential-like query parameters are rejected. At execution, independently supply the exact authorization reference, hosts, ports, query names, transport or DNS opt-ins, and maximum request, rate, concurrency, retry, timeout, trial, variant, response, and evidence limits. Built-in clients ignore ambient proxy settings and reject custom `Host` headers. These checks reduce configuration mistakes but do not replace a reviewed rules-of-engagement document.
 
-Remote DNS names require `allow_unpinned_dns: true`. This opt-in does not pin the address used by
-the operating system. High-assurance engagements should enforce approved destinations with host
-or network egress controls and controlled DNS. IP literals remain available without this opt-in
-when the target contract permits them.
+Remote DNS names require approved `pinned_dns` addresses or `allow_unpinned_dns: true`. Resolver
+answers are checked against every configured pin immediately before dispatch. High-assurance remote
+tests must also enforce matching host or network egress controls to close the remaining
+resolution-to-connection race. IP literals remain available without DNS configuration.
 
-Use laboratory canaries instead of real secrets. If the assessment concerns tool use, connect the model to simulated tools that cannot send messages, change production data, make purchases, or execute commands.
+Use timezone-aware `not_before` and `not_after` values to encode the approved test window. The
+framework checks the window at run startup, while rate limiting, and immediately before each target
+request. The upper bound is exclusive. Keep the contractual window in the rules of engagement as
+the authoritative record.
+
+Use laboratory canaries instead of real secrets. If the assessment concerns tool use, use
+`AgentSandboxHarness` with static `SandboxTool` responses or an equivalently reviewed simulation.
+Never connect exploratory attack cases to tools that can send messages, change production data,
+make purchases, or execute commands.
 
 Generated evidence can contain model output supplied by an assessed application. Treat reports as sensitive engagement material even when secrets are redacted. A manifest may name credential environment variables only when the operator independently grants each name with `--allow-env` at execution time.
 

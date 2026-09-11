@@ -701,7 +701,7 @@ class Runner:
     ) -> str:
         return self._identity_digest(
             {
-                "version": 2,
+                "version": 3,
                 "target_name": redact_text(self.target.name, secrets),
                 "target_contract": self.target.resume_identity,
                 "authorization_reference": (
@@ -725,6 +725,12 @@ class Runner:
                     "allow_insecure_http": self.scope.allow_insecure_http,
                     "allowed_query_parameters": self.scope.allowed_query_parameters,
                     "allow_unpinned_dns": self.scope.allow_unpinned_dns,
+                    "pinned_dns": {
+                        host: list(addresses)
+                        for host, addresses in self.scope.pinned_dns.items()
+                    },
+                    "not_before": self.scope.not_before,
+                    "not_after": self.scope.not_after,
                 },
                 "execution": {
                     "seed": self.config.seed,
@@ -831,6 +837,7 @@ class Runner:
                     guard.wait()
                 else:
                     guard.acquire()
+                self.scope.assert_endpoint(self.target.endpoint)
                 request_attempts += 1
                 response = self.target.complete(variant.messages, timeout_s=self.config.timeout_s)
                 evidence_secrets = _merge_redact_secrets(
@@ -904,6 +911,18 @@ class Runner:
         metadata = {
             **redact_value(self.metadata, secrets),
             "scope_mode": self.scope.mode.value,
+            "scope_controls": redact_value(
+                {
+                    "not_before": self.scope.not_before,
+                    "not_after": self.scope.not_after,
+                    "pinned_dns": {
+                        host: list(addresses)
+                        for host, addresses in self.scope.pinned_dns.items()
+                    },
+                    "allow_unpinned_dns": self.scope.allow_unpinned_dns,
+                },
+                secrets,
+            ),
             "stopped_early": stopped_early,
             "telemetry": "disabled",
             "planned_attempts": planned_attempts,

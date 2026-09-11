@@ -2,6 +2,11 @@
 
 Review date: 2026-09-09
 
+This document records the 1.0 state. The 1.1 development branch addresses adaptive minimization,
+calibrated semantic judging, synthetic agent tooling, RAG fixtures, authorization windows, and DNS
+result pinning. External review and multi-assessment evidence remain open maturity gates, so the
+package metadata uses the Beta classifier.
+
 ## Where the library is useful
 
 The strongest part of `advent-prompt-pwn` is its engagement workflow. It turns a collection of

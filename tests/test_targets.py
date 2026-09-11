@@ -105,6 +105,27 @@ def test_openai_target_requires_configured_key(monkeypatch: pytest.MonkeyPatch) 
     target.close()
 
 
+def test_openai_target_rejects_unsafe_authentication_header_configuration() -> None:
+    with pytest.raises(ConfigurationError, match="safe HTTP header"):
+        OpenAICompatibleTarget(
+            model="lab",
+            base_url="http://localhost",
+            api_key_header="Bad Header",
+        )
+    with pytest.raises(ConfigurationError, match="must not override Host"):
+        OpenAICompatibleTarget(
+            model="lab",
+            base_url="http://localhost",
+            api_key_header="Host",
+        )
+    with pytest.raises(ConfigurationError, match="line breaks"):
+        OpenAICompatibleTarget(
+            model="lab",
+            base_url="http://localhost",
+            api_key_prefix="Bearer\n",
+        )
+
+
 def test_http_targets_validate_models_and_response_limits() -> None:
     with pytest.raises(ConfigurationError, match="model"):
         OpenAICompatibleTarget(model="", base_url="http://localhost")

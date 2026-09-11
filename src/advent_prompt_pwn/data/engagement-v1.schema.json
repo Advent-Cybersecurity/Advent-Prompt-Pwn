@@ -24,7 +24,7 @@
       "additionalProperties": false,
       "required": ["type"],
       "properties": {
-        "type": {"enum": ["fake", "http-json", "ollama", "openai-compatible"]},
+        "type": {"enum": ["fake", "http-json", "ollama", "openai-compatible", "openai", "azure-openai", "anthropic", "gemini"]},
         "name": {"type": "string"},
         "model": {"type": "string"},
         "base_url": {"type": "string"},
@@ -37,7 +37,12 @@
         "response_path": {"type": "string"},
         "tool_calls_path": {"type": "string"},
         "extra_body_file": {"type": "string"},
-        "max_response_bytes": {"type": "integer", "minimum": 1}
+        "max_response_bytes": {"type": "integer", "minimum": 1},
+        "resource": {"type": "string"},
+        "deployment": {"type": "string"},
+        "api_version": {"type": "string"},
+        "anthropic_version": {"type": "string"},
+        "max_tokens": {"type": "integer", "minimum": 1, "maximum": 1000000}
       }
     },
     "scope": {
@@ -54,6 +59,16 @@
         "allow_insecure_http": {"type": "boolean"}
         ,"allowed_query_parameters": {"type": "array", "items": {"type": "string"}}
         ,"allow_unpinned_dns": {"type": "boolean"}
+        ,"pinned_dns": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string"}
+          }
+        }
+        ,"not_before": {"type": ["string", "null"], "format": "date-time"}
+        ,"not_after": {"type": ["string", "null"], "format": "date-time"}
       }
     },
     "execution": {

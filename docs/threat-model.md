@@ -28,6 +28,9 @@
 - Oversized target responses exhausting memory or evidence storage
 - Credentials embedded in endpoint URLs or custom headers
 - DNS rebinding of an approved hostname toward an undeclared address
+- Execution before or after the authorized engagement window
+- Confidential evidence crossing into an external semantic judge
+- Synthetic agent tests invoking a real side-effecting tool
 - Evidence files being modified after an engagement
 - Formula or markup injection when evidence is imported into other tools
 - Compromised release or dependency artifacts
@@ -36,6 +39,8 @@
 
 - Local-only default scope
 - Exact remote host allowlists, with DNS hostnames disabled unless explicitly opted in
+- Optional DNS result pins checked immediately before each remote dispatch
+- Timezone-aware authorization windows checked throughout request dispatch
 - Required remote manifest port allowlists and independent execution-time scope grants
 - Independent execution-time ceilings for remote request, rate, concurrency, retry, timeout, trial, variant, response, and evidence limits
 - Strict engagement-v1 field, type, required-value, and unknown-field validation
@@ -61,8 +66,20 @@
   selected strategies, selected cases, trials per variant, framework seed, planned attempt totals,
   per-case strategy coverage, and exact generated job inputs when the corpus is unchanged
 - No telemetry or endpoint discovery
+- Semantic judges require mixed-label calibration and explicit acknowledgement for external data
+  boundaries
+- The built-in agent sandbox can return only static JSON and never executes tool callbacks
 - Dependency and source checks in CI
 
 ## Residual risk
 
-The framework cannot prove that an authorization reference is legitimate or enforce a contractual test window. Custom plugins execute Python in the assessor's process and must be reviewed before installation. Pattern-based redaction cannot identify every secret. HMAC authentication depends on a strong key that remains separate from evidence. Checkpoint freshness also depends on the operator retaining the latest expected integrity digest in trusted state. These controls do not provide public-key authorship or non-repudiation. The explicit DNS opt-in does not pin operating-system resolution, so high-assurance remote work requires controlled DNS and host or network egress policy. Model behavior can vary even when the framework seed is fixed, so target model and provider metadata must be retained.
+The framework cannot prove that an authorization reference or configured time window reflects a
+valid contract. Custom plugins execute Python in the assessor's process and must be reviewed before
+installation. Pattern-based redaction cannot identify every secret. HMAC authentication depends on
+a strong key that remains separate from evidence. Checkpoint freshness also depends on the operator
+retaining the latest expected integrity digest in trusted state. These controls do not provide
+public-key authorship or non-repudiation. DNS pins validate resolver answers but cannot eliminate the
+race between validation and the HTTP client's connection, so high-assurance work still requires host
+or network egress policy. Model behavior can vary even when the framework seed is fixed, so target
+model and provider metadata must be retained. Semantic-judge calibration can drift and does not
+replace practitioner review.

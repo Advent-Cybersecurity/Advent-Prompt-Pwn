@@ -1,0 +1,9 @@
+{"version":2,"width":100,"height":28,"timestamp":1789131600,"env":{"SHELL":"powershell","TERM":"xterm-256color"},"title":"advent-prompt-pwn 1.1 offline benchmark walkthrough"}
+[0.2,"o","PS> advent-prompt-pwn engagement validate benchmarks/engagement.yaml\r\n"]
+[0.5,"o","Valid engagement: benchmark-1-1 | Cases: 5 | Variants: 70 | Planned attempts: 70 | Target: fake\r\n"]
+[1.0,"o","PS> advent-prompt-pwn strategies\r\n"]
+[1.2,"o","delimiter\r\ndirect\r\nencoding\r\nindirect_document\r\nindirect_fixture\r\ninstruction_override\r\nmulti_turn\r\nmutation\r\nrag_poisoning\r\nrole_confusion\r\n"]
+[2.0,"o","PS> advent-prompt-pwn engagement run benchmarks/engagement.yaml --quiet\r\n"]
+[2.5,"o","Evidence bundle: examples/reports/benchmark-run\r\nAttempts: 70 | Findings: 0 | Errors: 0 | Requests: 70\r\n"]
+[3.1,"o","PS> advent-prompt-pwn verify examples/reports/benchmark-report.json\r\n"]
+[3.4,"o","[OK] report evidence verified: benchmark-example\r\n"]

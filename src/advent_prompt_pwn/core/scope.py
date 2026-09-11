@@ -5,10 +5,14 @@ from __future__ import annotations
 import ipaddress
 import math
 import re
+import socket
 import threading
 import time
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
+from types import MappingProxyType
 from urllib.parse import parse_qsl, urlparse
 
 from advent_prompt_pwn.exceptions import BudgetExceeded, ScopeViolation
@@ -89,6 +93,21 @@ def _is_local_host(host: str) -> bool:
         return False
 
 
+def _parse_time_bound(value: str | None, label: str) -> datetime | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{label} must be a non-empty ISO 8601 timestamp")
+    normalized = value.strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise ValueError(f"{label} must be a valid ISO 8601 timestamp") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError(f"{label} must include a timezone offset")
+    return parsed.astimezone(timezone.utc)
+
+
 @dataclass(frozen=True, slots=True)
 class Scope:
     """Explicit authorization boundary for a run."""
@@ -103,6 +122,9 @@ class Scope:
     allow_insecure_http: bool = False
     allowed_query_parameters: tuple[str, ...] = ()
     allow_unpinned_dns: bool = False
+    pinned_dns: Mapping[str, Sequence[str]] = field(default_factory=dict, hash=False)
+    not_before: str | None = None
+    not_after: str | None = None
 
     def __post_init__(self) -> None:
         normalized_hosts = tuple(
@@ -121,6 +143,37 @@ class Scope:
         if any(_is_sensitive_query_name(name) for name in query_parameters):
             raise ValueError("credential-like query parameter names cannot be allowlisted")
         object.__setattr__(self, "allowed_query_parameters", query_parameters)
+        if not isinstance(self.pinned_dns, Mapping):
+            raise ValueError("pinned_dns must be a hostname-to-addresses mapping")
+        normalized_pins: dict[str, tuple[str, ...]] = {}
+        for host, addresses in self.pinned_dns.items():
+            normalized_host = str(host).lower().rstrip(".")
+            if not normalized_host or "://" in normalized_host or "/" in normalized_host:
+                raise ValueError("pinned DNS keys must be bare hostnames")
+            try:
+                ipaddress.ip_address(normalized_host)
+            except ValueError:
+                pass
+            else:
+                raise ValueError("pinned DNS keys must be hostnames, not IP addresses")
+            if normalized_host not in normalized_hosts:
+                raise ValueError("pinned DNS host must be present in allowed_hosts")
+            if isinstance(addresses, (str, bytes)):
+                raise ValueError("pinned DNS values must be sequences of IP addresses")
+            try:
+                normalized_addresses = tuple(
+                    sorted({str(ipaddress.ip_address(address)) for address in addresses})
+                )
+            except ValueError as exc:
+                raise ValueError("pinned DNS values must be IP addresses") from exc
+            if not normalized_addresses:
+                raise ValueError("pinned DNS hosts require at least one IP address")
+            normalized_pins[normalized_host] = normalized_addresses
+        object.__setattr__(self, "pinned_dns", MappingProxyType(normalized_pins))
+        lower_bound = _parse_time_bound(self.not_before, "not_before")
+        upper_bound = _parse_time_bound(self.not_after, "not_after")
+        if lower_bound and upper_bound and lower_bound >= upper_bound:
+            raise ValueError("not_before must be earlier than not_after")
         if self.max_requests < 1:
             raise ValueError("max_requests must be positive")
         if self.requests_per_minute < 1:
@@ -146,6 +199,8 @@ class Scope:
         max_concurrency: int = 1,
         authorization_reference: str | None = None,
         allowed_query_parameters: list[str] | tuple[str, ...] = (),
+        not_before: str | None = None,
+        not_after: str | None = None,
     ) -> Scope:
         """Create a scope restricted to in-memory and loopback targets."""
 
@@ -157,6 +212,8 @@ class Scope:
             max_concurrency=max_concurrency,
             allow_insecure_http=True,
             allowed_query_parameters=tuple(allowed_query_parameters),
+            not_before=not_before,
+            not_after=not_after,
         )
 
     @classmethod
@@ -172,6 +229,9 @@ class Scope:
         allow_insecure_http: bool = False,
         allowed_query_parameters: list[str] | tuple[str, ...] = (),
         allow_unpinned_dns: bool = False,
+        pinned_dns: Mapping[str, Sequence[str]] | None = None,
+        not_before: str | None = None,
+        not_after: str | None = None,
     ) -> Scope:
         """Create an explicit allowlisted remote scope."""
 
@@ -187,10 +247,36 @@ class Scope:
             allow_insecure_http=allow_insecure_http,
             allowed_query_parameters=tuple(allowed_query_parameters),
             allow_unpinned_dns=allow_unpinned_dns,
+            pinned_dns={host: tuple(addresses) for host, addresses in (pinned_dns or {}).items()},
+            not_before=not_before,
+            not_after=not_after,
         )
 
-    def assert_endpoint(self, endpoint: str) -> None:
+    def assert_active(self, at: datetime | None = None) -> None:
+        """Raise when the current time is outside the authorized window."""
+
+        selected = at or datetime.now(timezone.utc)
+        if selected.tzinfo is None or selected.utcoffset() is None:
+            raise ValueError("active-window check requires a timezone-aware datetime")
+        selected = selected.astimezone(timezone.utc)
+        lower_bound = _parse_time_bound(self.not_before, "not_before")
+        upper_bound = _parse_time_bound(self.not_after, "not_after")
+        if lower_bound and selected < lower_bound:
+            raise ScopeViolation("engagement authorization window has not started")
+        if upper_bound and selected >= upper_bound:
+            raise ScopeViolation("engagement authorization window has ended")
+
+    def assert_endpoint(
+        self,
+        endpoint: str,
+        *,
+        verify_dns: bool = True,
+        verify_time: bool = True,
+    ) -> None:
         """Raise when an endpoint is outside this scope."""
+
+        if verify_time:
+            self.assert_active()
 
         try:
             parsed = urlparse(endpoint)
@@ -228,10 +314,23 @@ class Scope:
         try:
             ipaddress.ip_address(normalized)
         except ValueError:
-            if not self.allow_unpinned_dns:
+            pins = self.pinned_dns.get(normalized)
+            if pins and verify_dns:
+                try:
+                    answers = {
+                        str(ipaddress.ip_address(item[4][0]))
+                        for item in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+                    }
+                except (OSError, ValueError) as exc:
+                    raise ScopeViolation("pinned DNS resolution failed") from exc
+                if not answers or not answers.issubset(set(pins)):
+                    raise ScopeViolation(
+                        "target DNS result did not match its approved IP pins"
+                    ) from None
+            elif not pins and not self.allow_unpinned_dns:
                 raise ScopeViolation(
-                    "authorized remote DNS hostnames require explicit unpinned-DNS opt-in "
-                    "and enforced network egress controls"
+                    "authorized remote DNS hostnames require approved IP pins or explicit "
+                    "unpinned-DNS opt-in with enforced network egress controls"
                 ) from None
         if parsed.scheme == "http" and not self.allow_insecure_http:
             raise ScopeViolation(
@@ -285,6 +384,7 @@ class RequestGuard:
     def acquire(self) -> None:
         """Reserve and rate-limit one request."""
 
+        self._scope.assert_active()
         self.reserve(1)
         self.wait()
 
@@ -320,10 +420,12 @@ class RequestGuard:
 
         minimum_interval = 60.0 / self._scope.requests_per_minute
         while True:
+            self._scope.assert_active()
             with self._lock:
                 now = time.monotonic()
                 remaining = self._next_request - now
                 if remaining <= 0:
+                    self._scope.assert_active()
                     self._next_request = now + minimum_interval
                     return
             time.sleep(remaining)

@@ -4,6 +4,27 @@ All notable changes are recorded here. The project follows Semantic Versioning.
 
 ## Unreleased
 
+### Added
+
+- Bounded adaptive prompt minimization, feedback-guided mutation search, and deterministic
+  mutation strategy.
+- Calibrated semantic judge API with explicit external data-boundary acknowledgement.
+- Live multi-turn conversation attacks plus an agent harness with allowlisted static tool
+  simulation and no real tool execution.
+- Synthetic RAG poisoning fixtures for JSON, CSV, XML, and Markdown retrieval boundaries.
+- OpenAI, Azure OpenAI, Anthropic, and Gemini provider adapters.
+- Authorization `not_before` and `not_after` enforcement before dispatch.
+- DNS result pinning against approved IPv4 and IPv6 addresses before remote requests.
+- Versioned MkDocs site, public API reference, benchmark corpus, example reports, and terminal
+  walkthrough recording.
+
+### Changed
+
+- Project maturity metadata is now Beta until external practitioner and field-assessment gates are
+  complete.
+- Resume binding version 3 incorporates authorization windows and DNS pins. Start a fresh 1.1
+  checkpoint rather than resuming a 1.0 checkpoint.
+
 ### Security
 
 - Automatically redact environment-backed credentials used by built-in HTTP targets in direct

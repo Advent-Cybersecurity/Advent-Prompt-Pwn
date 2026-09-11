@@ -86,3 +86,11 @@ For each oracle, document:
 5. Whether the oracle sends evidence to another model or service.
 
 Deterministic oracles are preferred for reproducible evidence. `any` and `all` corpus oracles can compose other oracle specifications recursively. `json_path` evaluates dotted object keys and numeric list indexes. `tool_call` can match both the normalized tool name and an argument regular expression.
+
+Use `SemanticJudgeOracle` only when deterministic evidence cannot capture the objective. Calibrate
+it with positive and negative labeled observations, record the judge version and label policy, and
+explicitly acknowledge any external data boundary. Semantic scores require practitioner review.
+
+Use `rag_poisoning` for JSON, CSV, XML, and Markdown retrieval chunks, and `mutation` for seeded
+surface-form variants. `AdaptivePromptMinimizer` is a post-observation API whose evaluator and every
+candidate request remain inside the engagement budget selected by the caller.

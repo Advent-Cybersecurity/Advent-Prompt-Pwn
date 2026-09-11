@@ -16,7 +16,9 @@ Confirm:
 6. Emergency stop contact
 7. Evidence retention and handling requirements
 
-The framework validates configuration and enforces declared technical limits. It cannot verify that an authorization reference is genuine or that a run occurs during the approved time window.
+The framework validates configuration and enforces declared technical limits, including optional
+timezone-aware `not_before` and `not_after` values. It cannot verify that an authorization reference
+or configured window represents a genuine contract.
 
 ## 2. Create and preflight
 
@@ -61,7 +63,8 @@ The run fails before target construction when any manifest environment variable 
 
 Remote manifest scope is not treated as its own authorization. The execution command must match
 the manifest's authorization reference, complete host and port sets, query parameter names,
-insecure HTTP or unpinned DNS capabilities, and operator-approved workload ceilings. A typical
+insecure HTTP or unpinned DNS capabilities, and operator-approved workload ceilings. Prefer
+`pinned_dns` addresses over the unpinned DNS capability. A typical
 remote grant is:
 
 ```bash
@@ -92,6 +95,10 @@ Supported manifest target types are:
 - `fake`: deterministic local rehearsals and CI
 - `ollama`: local Ollama chat API
 - `openai-compatible`: chat-completions-compatible APIs
+- `openai`: OpenAI Chat Completions API
+- `azure-openai`: deployment-based Azure OpenAI Chat Completions API
+- `anthropic`: Anthropic Messages API
+- `gemini`: Google Gemini `generateContent` API
 - `http-json`: authorized AI applications with configurable JSON shapes
 
 The generic HTTP adapter supports two request modes. `messages` sends the complete normalized conversation. `prompt` sends only the final user message. Use `messages` when testing role boundaries or multi-turn behavior.
@@ -99,6 +106,17 @@ The generic HTTP adapter supports two request modes. `messages` sends the comple
 `response_path` and `tool_calls_path` use dotted JSON paths. Numeric path segments index lists. For example, `choices.0.message.content` addresses the first OpenAI-style choice.
 
 An optional `extra_body_file` must contain a JSON object. It cannot replace the configured message field, or the model and messages fields on the OpenAI-compatible adapter.
+
+Encode operational boundaries in the scope. Preflight validates syntax without waiting for a future
+window or resolving DNS. Execution enforces both before dispatch:
+
+```yaml
+scope:
+  not_before: "2026-09-11T09:00:00-07:00"
+  not_after: "2026-09-11T17:00:00-07:00"
+  pinned_dns:
+    ai-client.example.test: [192.0.2.10]
+```
 
 ## 5. Run and checkpoint
 

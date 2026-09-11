@@ -1,0 +1,61 @@
+site_name: advent-prompt-pwn
+site_description: Authorized adversarial testing for AI systems
+site_url: https://advent-cybersecurity.github.io/Advent-Prompt-Pwn/1.1/
+repo_url: https://github.com/Advent-Cybersecurity/Advent-Prompt-Pwn
+repo_name: Advent-Cybersecurity/Advent-Prompt-Pwn
+docs_dir: docs
+strict: true
+exclude_docs: |
+  allowed-signers
+  site-index.html
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+  palette:
+    scheme: slate
+    primary: deep orange
+    accent: amber
+plugins:
+  - search
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - fenced_code
+  - tables
+  - toc:
+      permalink: true
+nav:
+  - Home: index.md
+  - Get started:
+      - Engagement workflow: engagement-workflow.md
+      - Authorized use: authorized-use.md
+      - Recorded walkthrough: walkthroughs/quickstart.md
+  - Attack engineering:
+      - Advanced attacks: advanced-attacks.md
+      - Authoring: authoring.md
+      - Benchmarks: benchmarks.md
+  - Integrations:
+      - Provider adapters: providers.md
+      - Agent sandbox: agent-sandbox.md
+  - API reference:
+      - Overview: api/index.md
+      - Attacks and judges: api/attacks.md
+      - Targets: api/targets.md
+      - Scope and engagement: api/operations.md
+  - Architecture: architecture.md
+  - Threat model: threat-model.md
+  - Compatibility: api-compatibility.md
+  - 1.0 retrospective: retrospective-1.0.md
+  - Security policy: security.md
+extra:
+  version:
+    provider: false
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/Advent-Cybersecurity/Advent-Prompt-Pwn
+copyright: Copyright Advent Cybersecurity LLC. Apache-2.0 licensed.

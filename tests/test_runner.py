@@ -401,6 +401,19 @@ def test_runner_validates_resume_identity_and_concurrency_limit(
             resume_from=baseline,
             expected_resume_integrity_sha256=baseline.integrity_sha256,
         )
+    with pytest.raises(ValueError, match="execution binding"):
+        Runner(
+            FakeTarget("safe"),
+            scope=Scope.local_only(
+                requests_per_minute=1_000_000,
+                not_after="2030-01-01T00:00:00Z",
+            ),
+            config=RunConfig(checkpoint_hmac_key=key),
+        ).run(
+            [canary_case],
+            resume_from=baseline,
+            expected_resume_integrity_sha256=baseline.integrity_sha256,
+        )
     with pytest.raises(ValueError, match="exceeds scope"):
         Runner(
             FakeTarget("safe"),

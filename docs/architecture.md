@@ -20,7 +20,11 @@ A case defines the base objective, optional system instruction, tags, metadata, 
 
 ## Strategy
 
-A strategy converts one case into one or more message sequences. Strategy generation receives a seeded random generator so future stochastic mutations remain reproducible.
+A strategy converts one case into one or more message sequences. Strategy generation receives a
+seeded random generator so manifest mutations remain reproducible. Adaptive minimization and
+score-guided mutation are separate, budget-bound APIs because every candidate consumes target
+budget and needs an evaluator chosen by the assessor. Live conversation attacks accept a trusted
+local planner and route every target request through the same scope and request guard.
 
 ## Oracle
 
@@ -53,4 +57,9 @@ successful message sequence already observed for each finding and does not conta
 
 ## Extension boundary
 
-Specialized strategies can be distributed as entry-point plugins. Target adapters can be implemented with the public `Target` abstract class. Plugins remain subject to the runner's scope and request budget only when they use the ordinary execution path. A plugin is ordinary Python code and is not sandboxed.
+Specialized strategies can be distributed as entry-point plugins. Target adapters can be implemented
+with the public `Target` abstract class. First-party provider adapters normalize OpenAI, Azure OpenAI,
+Anthropic, and Gemini responses without adding provider SDK dependencies. Plugins remain subject to
+the runner's scope and request budget only when they use the ordinary execution path. A plugin is
+ordinary Python code and is not sandboxed. The agent sandbox is different: it accepts only static
+tool responses and cannot invoke plugin code.

@@ -284,6 +284,17 @@ def test_target_factories_cover_supported_network_adapters(tmp_path: Path) -> No
                 extra_body_file=extra,
             )
         ),
+        _build_target(TargetSpec(kind="openai", model="gpt-lab")),
+        _build_target(
+            TargetSpec(
+                kind="azure-openai",
+                resource="resource-lab",
+                deployment="deployment-lab",
+                api_version="2026-01-01",
+            )
+        ),
+        _build_target(TargetSpec(kind="anthropic", model="claude-lab")),
+        _build_target(TargetSpec(kind="gemini", model="gemini-lab")),
         _build_target(
             TargetSpec(
                 kind="http-json",
@@ -296,11 +307,65 @@ def test_target_factories_cover_supported_network_adapters(tmp_path: Path) -> No
         assert [target.endpoint for target in targets] == [
             "http://127.0.0.1:11434/api/chat",
             "https://example.test/v1/chat/completions",
+            "https://api.openai.com/v1/chat/completions",
+            "https://resource-lab.openai.azure.com/openai/deployments/"
+            "deployment-lab/chat/completions?api-version=2026-01-01",
+            "https://api.anthropic.com/v1/messages",
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            "gemini-lab:generateContent",
             "https://example.test/chat",
         ]
     finally:
         for target in targets:
             target.close()
+
+
+def test_engagement_scope_parses_time_window_and_dns_pins(tmp_path: Path) -> None:
+    manifest = write_starter_engagement(tmp_path / "engagement.yaml")
+    text = manifest.read_text(encoding="utf-8")
+    manifest.write_text(
+        text.replace(
+            "mode: local",
+            "mode: authorized_remote\n  allowed_hosts: [ai.example.test]\n"
+            "  allowed_ports: [443]",
+        ).replace(
+            "pinned_dns: {}\n  not_before: null\n  not_after: null",
+            "pinned_dns:\n    ai.example.test: [192.0.2.10]\n"
+            "  not_before: '2030-01-01T00:00:00Z'\n"
+            "  not_after: '2030-01-02T00:00:00Z'",
+        ),
+        encoding="utf-8",
+    )
+    definition = load_engagement(manifest)
+    assert definition.scope.pinned_dns == {"ai.example.test": ("192.0.2.10",)}
+    assert definition.scope.not_before == "2030-01-01T00:00:00Z"
+
+
+def test_remote_preflight_accepts_future_window_and_pins_without_dns_lookup(
+    tmp_path: Path,
+) -> None:
+    definition = _definition(tmp_path)
+    remote = replace(
+        definition,
+        target=TargetSpec(
+            kind="openai-compatible",
+            model="lab",
+            base_url="https://ai.example.test/v1",
+        ),
+        scope=ScopeSpec(
+            mode="authorized_remote",
+            authorization_reference="SOW-43",
+            allowed_hosts=("ai.example.test",),
+            allowed_ports=(443,),
+            max_requests=2,
+            requests_per_minute=60,
+            pinned_dns={"ai.example.test": ("192.0.2.10",)},
+            not_before="2030-01-01T00:00:00Z",
+            not_after="2030-01-02T00:00:00Z",
+        ),
+        execution=ExecutionSpec(strategies=("direct",)),
+    )
+    assert plan_engagement(remote).variants == 1
 
 
 def test_extra_body_validation(tmp_path: Path) -> None:

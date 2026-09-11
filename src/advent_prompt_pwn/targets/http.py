@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from collections.abc import Mapping, Sequence
 from threading import Lock
@@ -15,6 +16,8 @@ from advent_prompt_pwn.core.models import Message, TargetResponse, ToolCall
 from advent_prompt_pwn.exceptions import ConfigurationError, TargetError
 from advent_prompt_pwn.targets.base import Target
 from advent_prompt_pwn.validation import validate_json_value
+
+_HEADER_NAME = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
 
 
 def _safe_http_error(label: str, exc: httpx.HTTPError) -> TargetError:
@@ -96,6 +99,8 @@ class OpenAICompatibleTarget(Target):
         client: httpx.Client | None = None,
         extra_body: dict[str, Any] | None = None,
         max_response_bytes: int = 2_000_000,
+        api_key_header: str = "Authorization",
+        api_key_prefix: str = "Bearer ",
     ) -> None:
         if not model.strip():
             raise ConfigurationError("model must not be empty")
@@ -104,6 +109,14 @@ class OpenAICompatibleTarget(Target):
         self.model = model
         self.base_url = base_url.rstrip("/")
         self.api_key_env = api_key_env
+        if not _HEADER_NAME.fullmatch(api_key_header):
+            raise ConfigurationError("api_key_header must be a safe HTTP header name")
+        if api_key_header.casefold() == "host":
+            raise ConfigurationError("api_key_header must not override Host")
+        if any(character in api_key_prefix for character in "\r\n"):
+            raise ConfigurationError("api_key_prefix must not contain line breaks")
+        self.api_key_header = api_key_header
+        self.api_key_prefix = api_key_prefix
         self._name = name or f"openai-compatible:{model}"
         self._client = client or httpx.Client(trust_env=False)
         self._owns_client = client is None
@@ -142,6 +155,8 @@ class OpenAICompatibleTarget(Target):
             "model": self.model,
             "base_url": self.base_url,
             "api_key_env": self.api_key_env,
+            "api_key_header": self.api_key_header,
+            "api_key_prefix": self.api_key_prefix,
             "extra_body": self.extra_body,
             "max_response_bytes": self.max_response_bytes,
         }
@@ -154,7 +169,7 @@ class OpenAICompatibleTarget(Target):
                 raise ConfigurationError(f"environment variable {self.api_key_env!r} is not set")
             with self._sensitive_values_lock:
                 self._used_sensitive_values.add(api_key)
-            headers["Authorization"] = f"Bearer {api_key}"
+            headers[self.api_key_header] = f"{self.api_key_prefix}{api_key}"
         body: dict[str, Any] = {
             **self.extra_body,
             "model": self.model,

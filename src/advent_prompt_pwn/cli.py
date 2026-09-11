@@ -45,10 +45,14 @@ from advent_prompt_pwn.reproducers import save_minimal_reproducers, select_minim
 from advent_prompt_pwn.schema import SCHEMA_NAMES, get_schema
 from advent_prompt_pwn.strategies import CompositeStrategy, get_strategy, strategy_names
 from advent_prompt_pwn.targets import (
+    AnthropicTarget,
+    AzureOpenAITarget,
     FakeTarget,
+    GeminiTarget,
     HttpJsonTarget,
     OllamaTarget,
     OpenAICompatibleTarget,
+    OpenAITarget,
     Target,
 )
 from advent_prompt_pwn.validation import validate_json_value
@@ -201,12 +205,26 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("corpus")
     run.add_argument(
         "--target",
-        choices=("fake", "http-json", "ollama", "openai-compatible"),
+        choices=(
+            "fake",
+            "http-json",
+            "ollama",
+            "openai-compatible",
+            "openai",
+            "azure-openai",
+            "anthropic",
+            "gemini",
+        ),
         default="fake",
     )
     run.add_argument("--model")
     run.add_argument("--base-url")
     run.add_argument("--api-key-env")
+    run.add_argument("--resource")
+    run.add_argument("--deployment")
+    run.add_argument("--api-version")
+    run.add_argument("--anthropic-version", default="2023-06-01")
+    run.add_argument("--max-tokens", type=int, default=1024)
     run.add_argument("--extra-body-file")
     run.add_argument("--request-mode", choices=("messages", "prompt"), default="messages")
     run.add_argument("--request-field", default="messages")
@@ -251,6 +269,9 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--allow-insecure-http", action="store_true")
     run.add_argument("--allow-query-parameter", action="append", default=[])
     run.add_argument("--allow-unpinned-dns", action="store_true")
+    run.add_argument("--pin-dns", action="append", default=[], metavar="HOST=IP[,IP]")
+    run.add_argument("--not-before")
+    run.add_argument("--not-after")
     run.add_argument("--authorization-ref")
     run.add_argument("--resume")
     run.add_argument("--resume-integrity")
@@ -301,6 +322,20 @@ def _headers_env(values: Sequence[str]) -> dict[str, str]:
     return headers
 
 
+def _dns_pins(values: Sequence[str]) -> dict[str, tuple[str, ...]]:
+    pins: dict[str, tuple[str, ...]] = {}
+    for value in values:
+        host, separator, raw_addresses = value.partition("=")
+        addresses = tuple(item.strip() for item in raw_addresses.split(",") if item.strip())
+        if not separator or not host.strip() or not addresses:
+            raise ValueError("--pin-dns values must use HOST=IP[,IP]")
+        normalized = host.strip().lower().rstrip(".")
+        if normalized in pins:
+            raise ValueError(f"duplicate --pin-dns host: {normalized}")
+        pins[normalized] = addresses
+    return pins
+
+
 def _target(args: argparse.Namespace) -> Target:
     if args.target == "fake":
         return FakeTarget(args.fake_response)
@@ -317,12 +352,51 @@ def _target(args: argparse.Namespace) -> Target:
             tool_calls_path=args.tool_calls_path,
             max_response_bytes=args.max_response_bytes,
         )
+    if args.target == "azure-openai":
+        if not args.resource or not args.deployment or not args.api_version:
+            raise ValueError(
+                "--resource, --deployment, and --api-version are required for azure-openai"
+            )
+        return AzureOpenAITarget(
+            args.deployment,
+            resource=args.resource,
+            api_version=args.api_version,
+            api_key_env=args.api_key_env or "AZURE_OPENAI_API_KEY",
+            extra_body=_extra_body(args.extra_body_file),
+            max_response_bytes=args.max_response_bytes,
+        )
     if not args.model:
         raise ValueError(f"--model is required for target {args.target}")
     if args.target == "ollama":
         return OllamaTarget(
             args.model,
             base_url=args.base_url or "http://127.0.0.1:11434",
+            max_response_bytes=args.max_response_bytes,
+        )
+    if args.target == "openai":
+        return OpenAITarget(
+            args.model,
+            api_key_env=args.api_key_env or "OPENAI_API_KEY",
+            base_url=args.base_url or "https://api.openai.com/v1",
+            extra_body=_extra_body(args.extra_body_file),
+            max_response_bytes=args.max_response_bytes,
+        )
+    if args.target == "anthropic":
+        return AnthropicTarget(
+            args.model,
+            api_key_env=args.api_key_env or "ANTHROPIC_API_KEY",
+            base_url=args.base_url or "https://api.anthropic.com",
+            anthropic_version=args.anthropic_version,
+            max_tokens=args.max_tokens,
+            extra_body=_extra_body(args.extra_body_file),
+            max_response_bytes=args.max_response_bytes,
+        )
+    if args.target == "gemini":
+        return GeminiTarget(
+            args.model,
+            api_key_env=args.api_key_env or "GEMINI_API_KEY",
+            base_url=args.base_url or "https://generativelanguage.googleapis.com",
+            extra_body=_extra_body(args.extra_body_file),
             max_response_bytes=args.max_response_bytes,
         )
     if not args.base_url:
@@ -344,6 +418,8 @@ def _scope(args: argparse.Namespace) -> Scope:
             max_concurrency=args.concurrency,
             authorization_reference=args.authorization_ref,
             allowed_query_parameters=args.allow_query_parameter,
+            not_before=args.not_before,
+            not_after=args.not_after,
         )
     if not args.authorization_ref:
         raise ValueError("--authorization-ref is required with --authorized")
@@ -357,6 +433,9 @@ def _scope(args: argparse.Namespace) -> Scope:
         allow_insecure_http=args.allow_insecure_http,
         allowed_query_parameters=args.allow_query_parameter,
         allow_unpinned_dns=args.allow_unpinned_dns,
+        pinned_dns=_dns_pins(args.pin_dns),
+        not_before=args.not_before,
+        not_after=args.not_after,
     )
 
 

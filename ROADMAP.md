@@ -20,22 +20,25 @@
 - [x] API compatibility policy
 - [x] Independent full-repository application-security review
 - [ ] Complete name clearance and reserve package and repository names
-- [ ] Publish the repository and configure private vulnerability reporting
+- [x] Publish the repository and configure private vulnerability reporting
 - [ ] Complete two external practitioner reviews
 
 ## Release 1.1: assessment workflow extensions
 
-- Adaptive delta-debugging finding minimization
-- Provider-specific adapters maintained outside the core
-- Optional signed bundle integrations
-- Engagement time-window enforcement
-- Pluggable model-judge oracle with data-boundary warnings
+- [x] Adaptive, budget-bound minimization and score-guided mutation APIs
+- [x] Provider-specific OpenAI, Azure OpenAI, Anthropic, and Gemini adapters
+- [ ] Optional signed bundle integrations
+- [x] Engagement time-window enforcement
+- [x] Calibrated semantic-judge oracle with data-boundary acknowledgement
+- [x] DNS result pinning for approved remote host addresses
+- [x] Versioned documentation, API reference, examples, benchmarks, and walkthrough recording
 
 ## Release 1.2: agent and RAG testing
 
-- Sandboxed tool-use simulation
-- Retrieval-corpus poisoning fixtures
-- Indirect injection across HTML, Markdown, email, and document fixtures
+- [x] Sandboxed tool-use simulation
+- [x] Feedback-adaptive live multi-turn conversation harness
+- [x] Retrieval-corpus poisoning fixtures
+- [x] Indirect injection across HTML, Markdown, email, and document fixtures
 - Trust-boundary graphs for agent workflows
 - Human-review queues for ambiguous oracle decisions
 

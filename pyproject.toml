@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "advent-prompt-pwn"
-version = "1.0.0"
+version = "1.1.0"
 description = "A composable Python toolkit for authorized adversarial testing of AI systems"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -20,7 +20,7 @@ keywords = [
   "jailbreak-testing",
 ]
 classifiers = [
-  "Development Status :: 5 - Production/Stable",
+  "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
   "Intended Audience :: Information Technology",
   "License :: OSI Approved :: Apache Software License",
@@ -52,11 +52,16 @@ dev = [
   "types-regex>=2026.6.28.20260630",
   "twine==7.0.0",
 ]
+docs = [
+  "mkdocs==1.6.1",
+  "mkdocs-material==9.7.7",
+]
 
 [project.urls]
 Homepage = "https://www.adventcybersecurity.com/"
 Repository = "https://github.com/Advent-Cybersecurity/Advent-Prompt-Pwn"
 Issues = "https://github.com/Advent-Cybersecurity/Advent-Prompt-Pwn/issues"
+Documentation = "https://advent-cybersecurity.github.io/Advent-Prompt-Pwn/"
 
 [project.scripts]
 advent-prompt-pwn = "advent_prompt_pwn.cli:main"

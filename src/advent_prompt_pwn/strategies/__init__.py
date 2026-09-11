@@ -10,6 +10,8 @@ from advent_prompt_pwn.strategies.builtin import (
     IndirectFixtureStrategy,
     InstructionOverrideStrategy,
     MultiTurnStrategy,
+    MutationStrategy,
+    RagPoisoningStrategy,
     RoleConfusionStrategy,
 )
 from advent_prompt_pwn.strategies.registry import get_strategy, strategy_names
@@ -23,6 +25,8 @@ __all__ = [
     "IndirectFixtureStrategy",
     "InstructionOverrideStrategy",
     "MultiTurnStrategy",
+    "MutationStrategy",
+    "RagPoisoningStrategy",
     "RoleConfusionStrategy",
     "Strategy",
     "get_strategy",

@@ -10,6 +10,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import yaml
 
@@ -32,10 +33,14 @@ from advent_prompt_pwn.parsing import load_json_strict, load_yaml_strict
 from advent_prompt_pwn.schema import validate_schema_document
 from advent_prompt_pwn.strategies import CompositeStrategy, Strategy, get_strategy
 from advent_prompt_pwn.targets import (
+    AnthropicTarget,
+    AzureOpenAITarget,
     FakeTarget,
+    GeminiTarget,
     HttpJsonTarget,
     OllamaTarget,
     OpenAICompatibleTarget,
+    OpenAITarget,
     Target,
 )
 from advent_prompt_pwn.validation import validate_json_value
@@ -47,6 +52,12 @@ _ENGAGEMENT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{1,79}$")
 _ENVIRONMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _HEADER_NAME = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
 _OUTPUT_FORMATS = {"json", "jsonl", "markdown", "html", "junit", "sarif"}
+_DEFAULT_PROVIDER_CREDENTIALS = {
+    "openai": "OPENAI_API_KEY",
+    "azure-openai": "AZURE_OPENAI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+}
 
 STARTER_ENGAGEMENT = """\
 version: 1
@@ -64,6 +75,9 @@ scope:
   mode: local
   allowed_query_parameters: []
   allow_unpinned_dns: false
+  pinned_dns: {}
+  not_before: null
+  not_after: null
   max_requests: 200
   requests_per_minute: 120
   max_concurrency: 1
@@ -108,6 +122,11 @@ class TargetSpec:
     tool_calls_path: str | None = None
     headers_env: Mapping[str, str] | None = None
     max_response_bytes: int = 2_000_000
+    resource: str | None = None
+    deployment: str | None = None
+    api_version: str | None = None
+    anthropic_version: str = "2023-06-01"
+    max_tokens: int = 1_024
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +141,9 @@ class ScopeSpec:
     allow_insecure_http: bool = False
     allowed_query_parameters: tuple[str, ...] = ()
     allow_unpinned_dns: bool = False
+    pinned_dns: Mapping[str, tuple[str, ...]] | None = None
+    not_before: str | None = None
+    not_after: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -231,6 +253,18 @@ def _string_mapping(value: Any, label: str) -> dict[str, str]:
     return result
 
 
+def _string_sequence_mapping(value: Any, label: str) -> dict[str, tuple[str, ...]]:
+    if value is None:
+        return {}
+    mapping = _mapping(value, label)
+    result: dict[str, tuple[str, ...]] = {}
+    for key, item in mapping.items():
+        if not isinstance(item, list):
+            raise EngagementError(f"{label} values must be lists")
+        result[str(key)] = tuple(str(address) for address in item)
+    return result
+
+
 def _boolean(value: Any, label: str, *, default: bool) -> bool:
     selected = default if value is None else value
     if not isinstance(selected, bool):
@@ -301,7 +335,16 @@ def load_engagement(
     if not name or not owner or not authorization_reference:
         raise EngagementError("engagement name, owner, and authorization_reference are required")
     kind = str(target.get("type", "")).lower()
-    if kind not in {"fake", "http-json", "ollama", "openai-compatible"}:
+    if kind not in {
+        "fake",
+        "http-json",
+        "ollama",
+        "openai-compatible",
+        "openai",
+        "azure-openai",
+        "anthropic",
+        "gemini",
+    }:
         raise EngagementError(f"unsupported target type: {kind!r}")
     base = source.parent
     extra_body = target.get("extra_body_file")
@@ -329,6 +372,11 @@ def load_engagement(
         tool_calls_path=(str(target["tool_calls_path"]) if target.get("tool_calls_path") else None),
         headers_env=_string_mapping(target.get("headers_env"), "target.headers_env"),
         max_response_bytes=int(target.get("max_response_bytes", 2_000_000)),
+        resource=str(target["resource"]) if target.get("resource") else None,
+        deployment=str(target["deployment"]) if target.get("deployment") else None,
+        api_version=str(target["api_version"]) if target.get("api_version") else None,
+        anthropic_version=str(target.get("anthropic_version", "2023-06-01")),
+        max_tokens=int(target.get("max_tokens", 1_024)),
     )
     scope_spec = ScopeSpec(
         mode=str(scope.get("mode", "local")).lower(),
@@ -352,6 +400,9 @@ def load_engagement(
             "scope.allow_unpinned_dns",
             default=False,
         ),
+        pinned_dns=_string_sequence_mapping(scope.get("pinned_dns"), "scope.pinned_dns"),
+        not_before=(str(scope["not_before"]) if scope.get("not_before") else None),
+        not_after=(str(scope["not_after"]) if scope.get("not_after") else None),
     )
     if scope_spec.mode not in {"local", "authorized_remote"}:
         raise EngagementError("scope.mode must be local or authorized_remote")
@@ -443,14 +494,29 @@ def load_engagement(
 
 def _validate_definition(definition: EngagementDefinition) -> None:
     spec = definition.target
-    if spec.kind in {"ollama", "openai-compatible"} and not spec.model:
+    if spec.kind in {
+        "ollama",
+        "openai-compatible",
+        "openai",
+        "anthropic",
+        "gemini",
+    } and not spec.model:
         raise EngagementError(f"target.model is required for {spec.kind}")
     if spec.kind == "openai-compatible" and not spec.base_url:
         raise EngagementError("target.base_url is required for openai-compatible")
     if spec.kind == "http-json" and (not spec.endpoint or not spec.response_path):
         raise EngagementError("target.endpoint and target.response_path are required for http-json")
+    if spec.kind == "azure-openai" and (
+        not spec.resource or not spec.deployment or not spec.api_version
+    ):
+        raise EngagementError(
+            "target.resource, target.deployment, and target.api_version are required "
+            "for azure-openai"
+        )
     if spec.max_response_bytes < 1:
         raise EngagementError("target.max_response_bytes must be positive")
+    if not 1 <= spec.max_tokens <= 1_000_000:
+        raise EngagementError("target.max_tokens must be between 1 and 1000000")
     environment_names = [
         name for name in (spec.api_key_env, *(spec.headers_env or {}).values()) if name is not None
     ]
@@ -532,6 +598,41 @@ def _build_target(spec: TargetSpec) -> Target:
             tool_calls_path=spec.tool_calls_path,
             max_response_bytes=spec.max_response_bytes,
         )
+    if spec.kind == "openai":
+        return OpenAITarget(
+            spec.model or "",
+            api_key_env=spec.api_key_env or "OPENAI_API_KEY",
+            base_url=spec.base_url or "https://api.openai.com/v1",
+            extra_body=_load_extra_body(spec.extra_body_file),
+            max_response_bytes=spec.max_response_bytes,
+        )
+    if spec.kind == "azure-openai":
+        return AzureOpenAITarget(
+            spec.deployment or "",
+            resource=spec.resource or "",
+            api_version=spec.api_version or "",
+            api_key_env=spec.api_key_env or "AZURE_OPENAI_API_KEY",
+            extra_body=_load_extra_body(spec.extra_body_file),
+            max_response_bytes=spec.max_response_bytes,
+        )
+    if spec.kind == "anthropic":
+        return AnthropicTarget(
+            spec.model or "",
+            api_key_env=spec.api_key_env or "ANTHROPIC_API_KEY",
+            base_url=spec.base_url or "https://api.anthropic.com",
+            anthropic_version=spec.anthropic_version,
+            max_tokens=spec.max_tokens,
+            extra_body=_load_extra_body(spec.extra_body_file),
+            max_response_bytes=spec.max_response_bytes,
+        )
+    if spec.kind == "gemini":
+        return GeminiTarget(
+            spec.model or "",
+            api_key_env=spec.api_key_env or "GEMINI_API_KEY",
+            base_url=spec.base_url or "https://generativelanguage.googleapis.com",
+            extra_body=_load_extra_body(spec.extra_body_file),
+            max_response_bytes=spec.max_response_bytes,
+        )
     return OpenAICompatibleTarget(
         model=spec.model or "",
         base_url=spec.base_url or "",
@@ -550,6 +651,8 @@ def _build_scope(spec: ScopeSpec) -> Scope:
             max_concurrency=spec.max_concurrency,
             authorization_reference=spec.authorization_reference,
             allowed_query_parameters=spec.allowed_query_parameters,
+            not_before=spec.not_before,
+            not_after=spec.not_after,
         )
     if not spec.allowed_ports:
         raise EngagementError("authorized_remote scope requires allowed_ports")
@@ -563,6 +666,9 @@ def _build_scope(spec: ScopeSpec) -> Scope:
         allow_insecure_http=spec.allow_insecure_http,
         allowed_query_parameters=spec.allowed_query_parameters,
         allow_unpinned_dns=spec.allow_unpinned_dns,
+        pinned_dns=spec.pinned_dns,
+        not_before=spec.not_before,
+        not_after=spec.not_after,
     )
 
 
@@ -578,6 +684,21 @@ def _target_endpoint(spec: TargetSpec) -> str:
         return f"{(spec.base_url or 'http://127.0.0.1:11434').rstrip('/')}/api/chat"
     if spec.kind == "http-json":
         return spec.endpoint or ""
+    if spec.kind == "openai":
+        return f"{(spec.base_url or 'https://api.openai.com/v1').rstrip('/')}/chat/completions"
+    if spec.kind == "azure-openai":
+        resource = spec.resource or ""
+        deployment = quote(spec.deployment or "", safe="")
+        version = quote(spec.api_version or "", safe="")
+        return (
+            f"https://{resource}.openai.azure.com/openai/deployments/{deployment}"
+            f"/chat/completions?api-version={version}"
+        )
+    if spec.kind == "anthropic":
+        return f"{(spec.base_url or 'https://api.anthropic.com').rstrip('/')}/v1/messages"
+    if spec.kind == "gemini":
+        base_url = (spec.base_url or "https://generativelanguage.googleapis.com").rstrip("/")
+        return f"{base_url}/v1beta/models/{quote(spec.model or '', safe='')}:generateContent"
     return f"{(spec.base_url or '').rstrip('/')}/chat/completions"
 
 
@@ -605,6 +726,10 @@ def _redactions(spec: EngagementDefinition) -> tuple[str, ...]:
     if spec.execution.checkpoint_hmac_env:
         names.add(spec.execution.checkpoint_hmac_env)
     return tuple(value for name in sorted(names) if (value := os.environ.get(name)))
+
+
+def _target_credential_environment(spec: TargetSpec) -> str | None:
+    return spec.api_key_env or _DEFAULT_PROVIDER_CREDENTIALS.get(spec.kind)
 
 
 def plan_engagement(definition: EngagementDefinition) -> EngagementPlan:
@@ -643,7 +768,11 @@ def plan_engagement(definition: EngagementDefinition) -> EngagementPlan:
             "reduce target.max_response_bytes, selected attempts, or both"
         )
     scope = _build_scope(definition.scope)
-    scope.assert_endpoint(_target_endpoint(definition.target))
+    scope.assert_endpoint(
+        _target_endpoint(definition.target),
+        verify_dns=False,
+        verify_time=False,
+    )
     _load_extra_body(definition.target.extra_body_file)
     return EngagementPlan(definition, corpus, selected_cases, strategy, variants)
 
@@ -680,7 +809,7 @@ def run_engagement(
     required_environment = {
         name
         for name in (
-            definition.target.api_key_env,
+            _target_credential_environment(definition.target),
             *(definition.target.headers_env or {}).values(),
             *definition.execution.redact_env,
             definition.execution.checkpoint_hmac_env,

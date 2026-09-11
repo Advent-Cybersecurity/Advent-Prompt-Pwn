@@ -10,7 +10,11 @@ build/
 build-archive*/
 dist/
 htmlcov/
+site/
+site-test/
 reports/
+!examples/reports/
+!examples/reports/**
 .env
 .env.*
 !.env.example

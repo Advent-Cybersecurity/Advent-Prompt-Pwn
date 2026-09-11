@@ -2,12 +2,38 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
+from advent_prompt_pwn.adaptive import (
+    AdaptiveMutationResult,
+    AdaptivePromptMinimizer,
+    AdaptivePromptMutator,
+    MinimizationAttempt,
+    MinimizationConfig,
+    MinimizationResult,
+    MutationEvaluation,
+    MutationSearchConfig,
+    ScopedPromptEvaluator,
+    ScopedPromptScorer,
+    default_prompt_mutations,
+)
+from advent_prompt_pwn.agent import (
+    AgentRunResult,
+    AgentSandboxHarness,
+    AgentStep,
+    SandboxTool,
+    ToolObservation,
+    ToolSandbox,
+)
 from advent_prompt_pwn.bundle import (
     BundleVerification,
     verify_evidence_bundle,
     write_evidence_bundle,
 )
 from advent_prompt_pwn.comparison import ReportComparison, compare_reports, save_comparison
+from advent_prompt_pwn.conversation import (
+    ConversationAttackHarness,
+    ConversationAttackResult,
+    ConversationTurn,
+)
 from advent_prompt_pwn.core.models import (
     AttackCase,
     AttackVariant,
@@ -64,6 +90,14 @@ from advent_prompt_pwn.reproducers import (
     select_minimal_reproducers,
 )
 from advent_prompt_pwn.schema import get_schema
+from advent_prompt_pwn.semantic import (
+    CallableSemanticJudge,
+    LabeledSemanticScore,
+    SemanticCalibration,
+    SemanticDecision,
+    SemanticJudgeOracle,
+    calibrate_semantic_threshold,
+)
 from advent_prompt_pwn.strategies import (
     CompositeStrategy,
     DelimiterStrategy,
@@ -73,33 +107,51 @@ from advent_prompt_pwn.strategies import (
     IndirectFixtureStrategy,
     InstructionOverrideStrategy,
     MultiTurnStrategy,
+    MutationStrategy,
+    RagPoisoningStrategy,
     RoleConfusionStrategy,
 )
 from advent_prompt_pwn.targets import (
+    AnthropicTarget,
+    AzureOpenAITarget,
     FakeTarget,
     FunctionTarget,
+    GeminiTarget,
     HttpJsonTarget,
     OllamaTarget,
     OpenAICompatibleTarget,
+    OpenAITarget,
 )
 
 try:
     __version__ = version("advent-prompt-pwn")
 except PackageNotFoundError:
-    __version__ = "1.0.0"
+    __version__ = "1.1.0"
 
 __all__ = [
+    "AdaptiveMutationResult",
+    "AdaptivePromptMinimizer",
+    "AdaptivePromptMutator",
+    "AgentRunResult",
+    "AgentSandboxHarness",
+    "AgentStep",
     "AllOracle",
+    "AnthropicTarget",
     "AnyOracle",
     "AttackCase",
     "AttackVariant",
     "AttemptResult",
+    "AzureOpenAITarget",
     "BundleVerification",
+    "CallableSemanticJudge",
     "CanaryLeakOracle",
     "CompositeStrategy",
     "ContainsAllOracle",
     "ContainsAnyOracle",
     "ContainsOracle",
+    "ConversationAttackHarness",
+    "ConversationAttackResult",
+    "ConversationTurn",
     "CorpusDefinition",
     "DelimiterStrategy",
     "DirectStrategy",
@@ -110,18 +162,28 @@ __all__ = [
     "FakeTarget",
     "Finding",
     "FunctionTarget",
+    "GeminiTarget",
     "HttpJsonTarget",
     "IndirectDocumentStrategy",
     "IndirectFixtureStrategy",
     "InstructionOverrideStrategy",
     "JsonKeysOracle",
     "JsonPathOracle",
+    "LabeledSemanticScore",
     "Message",
     "MinimalReproducer",
+    "MinimizationAttempt",
+    "MinimizationConfig",
+    "MinimizationResult",
     "MultiTurnStrategy",
+    "MutationEvaluation",
+    "MutationSearchConfig",
+    "MutationStrategy",
     "OllamaTarget",
     "OpenAICompatibleTarget",
+    "OpenAITarget",
     "OracleResult",
+    "RagPoisoningStrategy",
     "RegexOracle",
     "ReportComparison",
     "Role",
@@ -129,14 +191,24 @@ __all__ = [
     "RunConfig",
     "RunReport",
     "Runner",
+    "SandboxTool",
     "Scope",
+    "ScopedPromptEvaluator",
+    "ScopedPromptScorer",
+    "SemanticCalibration",
+    "SemanticDecision",
+    "SemanticJudgeOracle",
     "Severity",
     "TargetResponse",
     "ToolCall",
     "ToolCallOracle",
+    "ToolObservation",
+    "ToolSandbox",
     "TrialStatistic",
     "__version__",
+    "calibrate_semantic_threshold",
     "compare_reports",
+    "default_prompt_mutations",
     "get_schema",
     "load_corpus",
     "load_corpus_definition",
