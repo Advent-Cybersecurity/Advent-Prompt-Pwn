@@ -4,9 +4,9 @@
 
 The project is maintained by [Advent Cybersecurity](https://www.adventcybersecurity.com/).
 
-Release status: 1.0.0 is the current public release. The default branch is the 1.1.0 beta and is
-qualified for controlled authorized engagement use, but external practitioner review and field
-assessment evidence remain open maturity gates.
+Release status: 1.0.0 is the current stable public release. Version 1.1.0rc1 is the qualified
+release candidate for controlled authorized engagement trials. Independent practitioner review
+and live-provider compatibility evidence remain open maturity gates.
 
 ## Capabilities
 
@@ -38,10 +38,16 @@ Python 3.10 or newer is required. Install from PyPI:
 python -m pip install advent-prompt-pwn
 ```
 
+After the release candidate is published, trial users can opt in explicitly:
+
+```bash
+python -m pip install --pre advent-prompt-pwn==1.1.0rc1
+```
+
 For release verification or offline installation, install the checked local wheel:
 
 ```bash
-python -m pip install dist/advent_prompt_pwn-1.1.0-py3-none-any.whl
+python -m pip install dist/advent_prompt_pwn-1.1.0rc1-py3-none-any.whl
 ```
 
 The distribution and CLI use hyphens. Python imports use underscores:
@@ -61,7 +67,7 @@ advent-prompt-pwn engagement init engagement.yaml
 Review `engagement.yaml`, confirm the authorization reference and limits, then preflight it without contacting the target:
 
 ```bash
-advent-prompt-pwn engagement validate engagement.yaml
+advent-prompt-pwn engagement validate engagement.yaml --explain
 ```
 
 Run it:

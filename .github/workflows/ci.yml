@@ -48,15 +48,26 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-      - run: python -m pip install build==1.6.0 twine==7.0.0
+      - run: python -m pip install build==1.6.0 cyclonedx-bom==7.3.1 twine==7.0.0
       - run: python -m build
       - run: python -m twine check dist/*
       - run: python -m pip install dist/*.whl
-      - run: python -c "import advent_prompt_pwn; assert advent_prompt_pwn.__version__ == '1.1.0'"
+      - run: python -c "import advent_prompt_pwn; assert advent_prompt_pwn.__version__ == '1.1.0rc1'"
       - run: advent-prompt-pwn doctor
+      - name: Generate release SBOM
+        run: |
+          python -m venv sbom-venv
+          sbom-venv/bin/python -m pip install dist/*.whl
+          cyclonedx-py environment sbom-venv/bin/python --pyproject pyproject.toml --mc-type library --output-reproducible --output-file SBOM.cdx.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: python-distributions
           path: dist/
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-metadata
+          path: SBOM.cdx.json
           if-no-files-found: error
           retention-days: 14

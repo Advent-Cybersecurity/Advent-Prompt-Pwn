@@ -16,6 +16,13 @@ _PATTERNS = (
         r"refresh[_-]?token)\s*[=:]\s*)[^\s,;&]+"
     ),
 )
+_REDACTION_MARKER = "[REDACTED]"
+
+
+def _replace_outside_markers(value: str, secret: str) -> str:
+    return _REDACTION_MARKER.join(
+        part.replace(secret, _REDACTION_MARKER) for part in value.split(_REDACTION_MARKER)
+    )
 
 
 def redact_text(value: str, secrets: Sequence[str] = ()) -> str:
@@ -23,12 +30,12 @@ def redact_text(value: str, secrets: Sequence[str] = ()) -> str:
 
     redacted = value
     for secret in sorted((item for item in secrets if item), key=len, reverse=True):
-        redacted = redacted.replace(secret, "[REDACTED]")
+        redacted = _replace_outside_markers(redacted, secret)
     for pattern in _PATTERNS:
         if pattern.groups:
             redacted = pattern.sub(r"\1[REDACTED]", redacted)
         else:
-            redacted = pattern.sub("[REDACTED]", redacted)
+            redacted = pattern.sub(_REDACTION_MARKER, redacted)
     return redacted
 
 

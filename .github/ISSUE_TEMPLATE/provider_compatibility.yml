@@ -1,0 +1,46 @@
+name: Provider compatibility
+description: Report a provider-adapter result using synthetic prompts and no credentials
+title: "[Provider] "
+labels: [provider-compatibility]
+body:
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Provider
+      options:
+        - OpenAI
+        - Azure OpenAI
+        - Anthropic
+        - Gemini
+        - OpenAI-compatible
+        - Ollama
+        - Custom HTTP JSON
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Package, Python, and operating-system versions
+    validations:
+      required: true
+  - type: textarea
+    id: observation
+    attributes:
+      label: Synthetic observation
+      description: Describe the normalized request or response behavior without client data.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal synthetic reproduction
+      description: Remove credentials, account identifiers, tenant names, and real engagement data.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: This report contains no credentials, client data, raw authorization headers, or unauthorized target information.
+          required: true

@@ -6,6 +6,7 @@ import argparse
 import importlib.util
 import json
 import os
+import platform
 import re
 import sys
 from collections.abc import Sequence
@@ -64,6 +65,18 @@ _TRUNCATED_TERMINAL_TEXT = "...[truncated]"
 _MAX_DIAGNOSTIC_LINES = 20
 _MAX_DIAGNOSTIC_LINE_CHARS = 180
 _OMITTED_DIAGNOSTICS = "- ...[additional diagnostics omitted]"
+_BUILTIN_DIAGNOSTIC_CODES = {
+    FileExistsError: "APPWN-E701",
+    KeyError: "APPWN-E702",
+    OSError: "APPWN-E703",
+    ValueError: "APPWN-E704",
+}
+_PROVIDER_CREDENTIALS = {
+    "openai": "OPENAI_API_KEY",
+    "azure-openai": "AZURE_OPENAI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+}
 
 
 def _terminal_safe(value: object, *, max_chars: int = _MAX_TERMINAL_TEXT_CHARS) -> str:
@@ -118,7 +131,14 @@ def _parser() -> argparse.ArgumentParser:
     validate.add_argument("corpus")
 
     subparsers.add_parser("strategies", help="list available attack strategies")
-    subparsers.add_parser("doctor", help="check the local runtime")
+    doctor = subparsers.add_parser("doctor", help="check the local runtime")
+    doctor.add_argument(
+        "--provider",
+        choices=tuple(_PROVIDER_CREDENTIALS),
+        help="also check a provider credential variable without exposing its value",
+    )
+    doctor.add_argument("--api-key-env", help="override the provider credential variable name")
+    doctor.add_argument("--output", help="write a nonsecret JSON diagnostic bundle")
 
     engagement = subparsers.add_parser(
         "engagement",
@@ -137,6 +157,11 @@ def _parser() -> argparse.ArgumentParser:
     )
     engagement_validate.add_argument("manifest")
     engagement_validate.add_argument("--allow-external-paths", action="store_true")
+    engagement_validate.add_argument(
+        "--explain",
+        action="store_true",
+        help="show the selected work, safety boundary, and output plan",
+    )
     engagement_run = engagement_commands.add_parser("run", help="run an engagement")
     engagement_run.add_argument("manifest")
     engagement_run.add_argument("--resume")
@@ -555,6 +580,42 @@ def _engagement(args: argparse.Namespace) -> int:
                 f"Target: {definition.target.kind}"
             )
         )
+        if args.explain:
+            scope = definition.scope
+            execution = definition.execution
+            target = definition.target
+            print(f"Strategies: {', '.join(execution.strategies)}")
+            print(
+                f"Scope: {scope.mode} | Authorization: {scope.authorization_reference} | "
+                f"Window: {scope.not_before or 'unbounded'} to {scope.not_after or 'unbounded'}"
+            )
+            print(
+                f"Limits: requests={scope.max_requests}, rpm={scope.requests_per_minute}, "
+                f"concurrency={execution.concurrency}, retries={execution.retries}, "
+                f"timeout={execution.timeout_seconds}s"
+            )
+            if scope.allowed_hosts:
+                pins = sum(len(addresses) for addresses in (scope.pinned_dns or {}).values())
+                print(
+                    _terminal_safe(
+                        f"Remote boundary: hosts={','.join(scope.allowed_hosts)} | "
+                        "ports="
+                        f"{','.join(str(port) for port in scope.allowed_ports) or 'default'} | "
+                        f"DNS pins={pins} | unpinned opt-in={scope.allow_unpinned_dns}"
+                    )
+                )
+            print(
+                _terminal_safe(
+                    f"Target: type={target.kind}, name={target.name or 'unnamed'}, "
+                    f"model={target.model or 'not applicable'}"
+                )
+            )
+            print(
+                _terminal_safe(
+                    f"Evidence: formats={','.join(definition.output.formats)} | "
+                    f"directory={definition.output.directory}"
+                )
+            )
         return 0
     resume = load_report(args.resume) if args.resume else None
     if bool(args.resume) != bool(args.resume_integrity):
@@ -740,7 +801,9 @@ def _schema(args: argparse.Namespace) -> int:
     return 0
 
 
-def _doctor() -> int:
+def _doctor(args: argparse.Namespace) -> int:
+    if args.api_key_env and not args.provider:
+        raise ValueError("--api-key-env requires --provider")
     checks = {
         "python>=3.10": sys.version_info >= (3, 10),
         "httpx": importlib.util.find_spec("httpx") is not None,
@@ -750,7 +813,50 @@ def _doctor() -> int:
     for name, passed in checks.items():
         print(f"[{'OK' if passed else 'MISSING'}] {name}")
     print("[OK] telemetry disabled")
-    return 0 if all(checks.values()) else 2
+    provider_check: dict[str, object] | None = None
+    if args.provider:
+        environment_name = args.api_key_env or _PROVIDER_CREDENTIALS[args.provider]
+        if not _ENVIRONMENT_NAME.fullmatch(environment_name):
+            raise ValueError(f"invalid environment variable name: {environment_name!r}")
+        configured = bool(os.environ.get(environment_name))
+        provider_check = {
+            "provider": args.provider,
+            "credential_environment": environment_name,
+            "configured": configured,
+            "network_request_performed": False,
+        }
+        print(
+            f"[{'OK' if configured else 'MISSING'}] {args.provider} credential in "
+            f"{environment_name} (value not read into diagnostics)"
+        )
+    passed = all(checks.values()) and (
+        provider_check is None or bool(provider_check["configured"])
+    )
+    if args.output:
+        payload = {
+            "schema_version": 1,
+            "advent_prompt_pwn_version": __version__,
+            "python_version": platform.python_version(),
+            "operating_system": platform.system(),
+            "operating_system_release": platform.release(),
+            "checks": checks,
+            "provider": provider_check,
+            "telemetry_enabled": False,
+            "overall_status": "ok" if passed else "attention_required",
+        }
+        destination = Path(args.output)
+        atomic_write_text(destination, json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        print(_terminal_safe(f"Diagnostics: {destination}"))
+    return 0 if passed else 2
+
+
+def _diagnostic_code(exc: BaseException) -> str:
+    if isinstance(exc, AdventPromptPwnError):
+        return exc.diagnostic_code
+    for exception_type, code in _BUILTIN_DIAGNOSTIC_CODES.items():
+        if isinstance(exc, exception_type):
+            return code
+    return "APPWN-E799"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -772,7 +878,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(_terminal_safe(name))
             return 0
         if args.command == "doctor":
-            return _doctor()
+            return _doctor(args)
         if args.command == "engagement":
             return _engagement(args)
         if args.command == "compare":
@@ -786,7 +892,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "run":
             return _run(args)
     except (AdventPromptPwnError, FileExistsError, KeyError, OSError, ValueError) as exc:
-        parser.error(_terminal_safe(exc))
+        parser.error(f"[{_diagnostic_code(exc)}] {_terminal_safe(exc)}")
     return 2
 
 

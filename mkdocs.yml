@@ -35,6 +35,9 @@ nav:
       - Engagement workflow: engagement-workflow.md
       - Authorized use: authorized-use.md
       - Recorded walkthrough: walkthroughs/quickstart.md
+      - Trial program: trial-program.md
+      - Provider validation: provider-validation.md
+      - Diagnostics: diagnostics.md
   - Attack engineering:
       - Advanced attacks: advanced-attacks.md
       - Authoring: authoring.md
@@ -51,6 +54,8 @@ nav:
   - Threat model: threat-model.md
   - Compatibility: api-compatibility.md
   - 1.0 retrospective: retrospective-1.0.md
+  - 1.1 RC qualification: qualification-1.1.0rc1.md
+  - 1.1 RC release checklist: release-checklist-1.1.0rc1.md
   - Security policy: security.md
 extra:
   version:

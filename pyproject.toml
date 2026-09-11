@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "advent-prompt-pwn"
-version = "1.1.0"
+version = "1.1.0rc1"
 description = "A composable Python toolkit for authorized adversarial testing of AI systems"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -42,6 +42,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "build==1.6.0",
+  "hypothesis==6.168.0",
   "mypy>=1.13",
   "pip-audit>=2.9",
   "pytest>=8.3",
@@ -55,6 +56,12 @@ dev = [
 docs = [
   "mkdocs==1.6.1",
   "mkdocs-material==9.7.7",
+]
+mutation = [
+  "mutmut==3.7.0",
+]
+sbom = [
+  "cyclonedx-bom==7.3.1",
 ]
 
 [project.urls]
@@ -109,3 +116,14 @@ python_version = "3.10"
 strict = true
 packages = ["advent_prompt_pwn"]
 warn_unreachable = true
+
+[tool.mutmut]
+source_paths = [
+  "src/advent_prompt_pwn/core/redaction.py",
+  "src/advent_prompt_pwn/integrity.py",
+]
+pytest_add_cli_args_test_selection = [
+  "tests/test_cli.py",
+  "tests/test_hardening.py",
+  "tests/test_properties.py",
+]

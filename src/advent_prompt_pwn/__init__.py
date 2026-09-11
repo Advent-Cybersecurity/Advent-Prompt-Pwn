@@ -126,7 +126,7 @@ from advent_prompt_pwn.targets import (
 try:
     __version__ = version("advent-prompt-pwn")
 except PackageNotFoundError:
-    __version__ = "1.1.0"
+    __version__ = "1.1.0rc1"
 
 __all__ = [
     "AdaptiveMutationResult",

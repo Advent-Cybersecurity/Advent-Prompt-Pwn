@@ -4,6 +4,8 @@ All notable changes are recorded here. The project follows Semantic Versioning.
 
 ## Unreleased
 
+## 1.1.0rc1 - 2026-09-11
+
 ### Added
 
 - Bounded adaptive prompt minimization, feedback-guided mutation search, and deterministic
@@ -17,6 +19,10 @@ All notable changes are recorded here. The project follows Semantic Versioning.
 - DNS result pinning against approved IPv4 and IPv6 addresses before remote requests.
 - Versioned MkDocs site, public API reference, benchmark corpus, example reports, and terminal
   walkthrough recording.
+- Stable diagnostic codes, explainable engagement preflight, and nonsecret JSON doctor bundles.
+- Property-based, state-machine, and concurrency qualification tests for critical invariants.
+- CycloneDX SBOM generation, CodeQL, OpenSSF Scorecard, and targeted mutation-test workflows.
+- Three documented offline assessments against intentionally vulnerable fixtures.
 
 ### Changed
 

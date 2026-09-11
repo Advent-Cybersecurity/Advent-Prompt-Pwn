@@ -19,7 +19,14 @@ from advent_prompt_pwn import (
     Scope,
 )
 from advent_prompt_pwn.bundle import write_evidence_bundle
-from advent_prompt_pwn.cli import _extra_body, _headers_env, _terminal_safe, main
+from advent_prompt_pwn.cli import (
+    _diagnostic_code,
+    _extra_body,
+    _headers_env,
+    _terminal_safe,
+    main,
+)
+from advent_prompt_pwn.exceptions import ScopeViolation
 from advent_prompt_pwn.integrity import seal_report
 from advent_prompt_pwn.report_io import load_report
 from advent_prompt_pwn.reporters import save_report
@@ -38,6 +45,45 @@ def test_cli_init_validate_and_list(tmp_path: Path, capsys: pytest.CaptureFixtur
 def test_cli_doctor(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["doctor"]) == 0
     assert "telemetry disabled" in capsys.readouterr().out
+
+
+def test_cli_doctor_writes_nonsecret_provider_diagnostics(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APPWN_SYNTHETIC_PROVIDER_KEY", "never-write-this-value")
+    destination = tmp_path / "diagnostics.json"
+    assert (
+        main(
+            [
+                "doctor",
+                "--provider",
+                "openai",
+                "--api-key-env",
+                "APPWN_SYNTHETIC_PROVIDER_KEY",
+                "--output",
+                str(destination),
+            ]
+        )
+        == 0
+    )
+    diagnostics = destination.read_text(encoding="utf-8")
+    assert "never-write-this-value" not in diagnostics
+    assert '"configured": true' in diagnostics
+    assert '"network_request_performed": false' in diagnostics
+    assert "credential" in capsys.readouterr().out
+
+
+def test_diagnostic_codes_are_stable() -> None:
+    assert _diagnostic_code(ScopeViolation("outside scope")) == "APPWN-E201"
+    assert _diagnostic_code(ValueError("invalid")) == "APPWN-E704"
+
+
+def test_cli_doctor_rejects_credential_override_without_provider() -> None:
+    with pytest.raises(SystemExit) as raised:
+        main(["doctor", "--api-key-env", "APPWN_SYNTHETIC_PROVIDER_KEY"])
+    assert raised.value.code == 2
 
 
 def test_cli_rejects_host_header_override() -> None:
@@ -122,7 +168,7 @@ def test_cli_reports_configuration_errors(tmp_path: Path) -> None:
 def test_cli_engagement_run_and_verify(tmp_path: Path) -> None:
     manifest = tmp_path / "engagement.yaml"
     assert main(["engagement", "init", str(manifest)]) == 0
-    assert main(["engagement", "validate", str(manifest)]) == 0
+    assert main(["engagement", "validate", str(manifest), "--explain"]) == 0
     manifest.write_text(
         manifest.read_text(encoding="utf-8").replace(
             "requests_per_minute: 120",

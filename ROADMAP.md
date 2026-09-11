@@ -32,6 +32,11 @@
 - [x] Calibrated semantic-judge oracle with data-boundary acknowledgement
 - [x] DNS result pinning for approved remote host addresses
 - [x] Versioned documentation, API reference, examples, benchmarks, and walkthrough recording
+- [x] Property, state-machine, and concurrent request-budget qualification
+- [x] CodeQL, OpenSSF Scorecard, CycloneDX SBOM, and targeted mutation automation
+- [x] Stable diagnostic codes, explainable preflight, and nonsecret diagnostic bundles
+- [x] Three documented assessments against intentionally vulnerable local targets
+- [ ] Complete credentialed live smoke tests for each first-party provider adapter
 
 ## Release 1.2: agent and RAG testing
 
@@ -48,4 +53,5 @@
 - Reproducibility tests on every supported Python version
 - Security review of transport, redaction, and report paths
 - Signed releases and published checksums
-- At least three documented assessments using authorized or intentionally vulnerable targets
+- [x] At least three documented assessments using intentionally vulnerable targets
+- [ ] Independent field evidence before changing the project maturity classifier from Beta

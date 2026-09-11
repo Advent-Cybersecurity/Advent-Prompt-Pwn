@@ -24,8 +24,14 @@ complete.
 python -m pip install advent-prompt-pwn
 ```
 
-The public package remains at 1.0.0 until 1.1.0 is tagged and published. Install the repository
-checkout to evaluate unreleased 1.1 features.
+The stable package remains at 1.0.0. Version 1.1.0rc1 is the opt-in release candidate for
+controlled trials. Install it explicitly after publication:
+
+```bash
+python -m pip install --pre advent-prompt-pwn==1.1.0rc1
+```
+
+To evaluate the repository checkout instead:
 
 ```bash
 python -m pip install -e ".[dev,docs]"
@@ -33,4 +39,5 @@ advent-prompt-pwn doctor
 ```
 
 Start with the [engagement workflow](engagement-workflow.md), then use the
-[advanced attack guide](advanced-attacks.md) and [benchmark suite](benchmarks.md).
+[advanced attack guide](advanced-attacks.md), [benchmark suite](benchmarks.md), and
+[trial program](trial-program.md).

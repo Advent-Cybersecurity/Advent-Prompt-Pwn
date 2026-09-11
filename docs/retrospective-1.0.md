@@ -2,10 +2,11 @@
 
 Review date: 2026-09-09
 
-This document records the 1.0 state. The 1.1 development branch addresses adaptive minimization,
-calibrated semantic judging, synthetic agent tooling, RAG fixtures, authorization windows, and DNS
-result pinning. External review and multi-assessment evidence remain open maturity gates, so the
-package metadata uses the Beta classifier.
+This document records the 1.0 state and the improvements carried into 1.1.0rc1. The release
+candidate adds adaptive minimization, calibrated semantic judging, synthetic agent tooling, RAG
+fixtures, authorization windows, DNS result pinning, and three synthetic qualification
+assessments. External review and live-provider evidence remain open maturity gates, so the package
+metadata uses the Beta classifier.
 
 ## Where the library is useful
 
@@ -34,28 +35,31 @@ successes does not prove that a target is secure.
 - Endpoint evidence, bundle enumeration, structured-input ambiguity, and JUnit control characters are
   handled conservatively at their trust boundaries.
 
-## Remaining limitations
+## Remaining limitations after 1.1.0rc1
 
-- Built-in strategies are structured transformations, not an adaptive attack-discovery engine.
-- Deterministic oracles can miss semantic, partial, or contextual policy violations.
+- Adaptive search is bounded and heuristic. It does not establish global prompt optimality.
+- Deterministic oracles can miss semantic, partial, or contextual policy violations. The semantic
+  judge API requires a representative labeled calibration set and practitioner review.
 - Compact reproducer selection is evidence based. It is not adaptive delta debugging and does not
   establish a globally minimal prompt.
-- Agent tooling and retrieval workflows do not yet provide complete sandboxed simulations or
-  multi-hop trust-boundary analysis.
+- Agent tooling is intentionally side-effect-free and does not yet provide multi-hop trust-boundary
+  graphs or human-review queues.
 - Pattern-based redaction cannot identify every secret.
 - Checkpoint HMACs provide shared-key authenticity but not encryption, public-key signatures, or
   non-repudiation.
 - Third-party plugins execute trusted Python in the assessor process.
-- Remote host authorization does not pin the operating-system DNS result.
-- External practitioner review and evidence from multiple authorized field assessments are still
-  required before describing the project as mature.
+- DNS pins are checked before built-in requests, but production engagements should also enforce
+  network egress controls against post-check routing changes.
+- Live compatibility checks for provider adapters require credentials and may incur provider cost.
+- External practitioner review and authorized field evidence are still required before describing
+  the project as mature.
 
 ## Next evidence gates
 
-1. Run the complete CI matrix on every declared Python version and both supported operating-system
-   families.
-2. Complete at least three documented assessments against authorized or intentionally vulnerable
-   targets.
+1. Complete the CodeQL, OpenSSF Scorecard, mutation, and Python 3.10 through 3.14 Linux and Windows
+   workflows for the exact release-candidate commit.
+2. Run credentialed one-request smoke checks for each supported first-party provider adapter.
 3. Obtain two external practitioner reviews.
-4. Calibrate any future semantic judge against a labeled evaluation set before using it for gates.
-5. Add adaptive, budget-bound delta debugging and a sandboxed agent and retrieval laboratory.
+4. Calibrate every semantic judge against a representative labeled evaluation set before using it
+   for an engagement gate.
+5. Collect authorized field evidence without placing client data in the public repository.
