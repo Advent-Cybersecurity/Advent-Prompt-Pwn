@@ -2,6 +2,18 @@
 
 All notable changes are recorded here. The project follows Semantic Versioning.
 
+## Unreleased
+
+### Security
+
+- Automatically redact environment-backed credentials used by built-in HTTP targets in direct
+  Python API runs, including values changed during an active run.
+- Redact structural evidence identifiers consistently across reports, checkpoints, and resume,
+  with collision rejection when distinct identifiers become ambiguous.
+- Escape terminal control characters and cap verification diagnostics in the CLI.
+- Verify release-tag signatures in the publication workflow and ignore common local credential
+  and private-key files.
+
 ## 1.0.0 - 2026-09-11
 
 ### Fixed

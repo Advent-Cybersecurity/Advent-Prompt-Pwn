@@ -602,9 +602,6 @@ def _select_cases(cases: Sequence[AttackCase], spec: ExecutionSpec) -> tuple[Att
 
 def _redactions(spec: EngagementDefinition) -> tuple[str, ...]:
     names = set(spec.execution.redact_env)
-    if spec.target.api_key_env:
-        names.add(spec.target.api_key_env)
-    names.update((spec.target.headers_env or {}).values())
     if spec.execution.checkpoint_hmac_env:
         names.add(spec.execution.checkpoint_hmac_env)
     return tuple(value for name in sorted(names) if (value := os.environ.get(name)))

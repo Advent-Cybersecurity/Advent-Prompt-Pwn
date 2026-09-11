@@ -6,6 +6,7 @@ import json
 import os
 import time
 from collections.abc import Mapping, Sequence
+from threading import Lock
 from typing import Any
 
 import httpx
@@ -107,6 +108,8 @@ class OpenAICompatibleTarget(Target):
         self._client = client or httpx.Client(trust_env=False)
         self._owns_client = client is None
         self.extra_body = dict(extra_body or {})
+        self._used_sensitive_values: set[str] = set()
+        self._sensitive_values_lock = Lock()
         if max_response_bytes < 1:
             raise ConfigurationError("max_response_bytes must be positive")
         self.max_response_bytes = max_response_bytes
@@ -122,6 +125,15 @@ class OpenAICompatibleTarget(Target):
     @property
     def supports_concurrency(self) -> bool:
         return True
+
+    @property
+    def sensitive_values(self) -> tuple[str, ...]:
+        current = os.environ.get(self.api_key_env) if self.api_key_env else None
+        with self._sensitive_values_lock:
+            values = set(self._used_sensitive_values)
+        if current:
+            values.add(current)
+        return tuple(sorted(values))
 
     @property
     def resume_identity(self) -> dict[str, Any]:
@@ -140,6 +152,8 @@ class OpenAICompatibleTarget(Target):
             api_key = os.environ.get(self.api_key_env)
             if not api_key:
                 raise ConfigurationError(f"environment variable {self.api_key_env!r} is not set")
+            with self._sensitive_values_lock:
+                self._used_sensitive_values.add(api_key)
             headers["Authorization"] = f"Bearer {api_key}"
         body: dict[str, Any] = {
             **self.extra_body,
@@ -344,6 +358,8 @@ class HttpJsonTarget(Target):
         self.extra_body = dict(extra_body or {})
         self.tool_calls_path = tool_calls_path
         self.max_response_bytes = max_response_bytes
+        self._used_sensitive_values: set[str] = set()
+        self._sensitive_values_lock = Lock()
         self._client = client or httpx.Client(trust_env=False)
         self._owns_client = client is None
         if self.request_field in self.extra_body:
@@ -362,6 +378,17 @@ class HttpJsonTarget(Target):
         return True
 
     @property
+    def sensitive_values(self) -> tuple[str, ...]:
+        values: set[str] = set()
+        for environment_name in self.headers_env.values():
+            value = os.environ.get(environment_name)
+            if value:
+                values.add(value)
+        with self._sensitive_values_lock:
+            values.update(self._used_sensitive_values)
+        return tuple(sorted(values))
+
+    @property
     def resume_identity(self) -> dict[str, Any]:
         return {
             **super().resume_identity,
@@ -376,11 +403,15 @@ class HttpJsonTarget(Target):
 
     def complete(self, messages: Sequence[Message], *, timeout_s: float) -> TargetResponse:
         headers = {"Content-Type": "application/json"}
+        resolved_sensitive_values: list[str] = []
         for header, environment_name in self.headers_env.items():
             value = os.environ.get(environment_name)
             if not value:
                 raise ConfigurationError(f"environment variable {environment_name!r} is not set")
             headers[header] = value
+            resolved_sensitive_values.append(value)
+        with self._sensitive_values_lock:
+            self._used_sensitive_values.update(resolved_sensitive_values)
         request_value: Any
         if self.request_mode == "messages":
             request_value = [message.to_dict() for message in messages]

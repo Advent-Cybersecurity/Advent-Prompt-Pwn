@@ -6,6 +6,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import replace
 from pathlib import Path
 
+import httpx
 import pytest
 
 from advent_prompt_pwn import (
@@ -14,13 +15,16 @@ from advent_prompt_pwn import (
     CanaryLeakOracle,
     FakeTarget,
     FunctionTarget,
+    HttpJsonTarget,
     Message,
+    OpenAICompatibleTarget,
     Role,
     RunConfig,
     Runner,
     Scope,
     TargetResponse,
     compare_reports,
+    run,
     verify_checkpoint_authentication,
 )
 from advent_prompt_pwn.bundle import verify_evidence_bundle, write_evidence_bundle
@@ -96,6 +100,245 @@ def test_redaction_covers_all_persisted_target_fields() -> None:
     ).run([case], _NamedStrategy(secret))
     assert secret not in json.dumps(report.to_dict(), sort_keys=True)
     assert verify_report_evidence(report) == ()
+
+
+def test_direct_runner_redacts_http_json_environment_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secret = "synthetic-direct-http-json-credential"
+    monkeypatch.setenv("APPWN_DIRECT_HTTP_JSON_KEY", secret)
+    client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={
+                    "answer": secret,
+                    "calls": [{"id": secret, "name": secret, "arguments": secret}],
+                },
+            )
+        )
+    )
+    target = HttpJsonTarget(
+        endpoint="http://127.0.0.1/test",
+        response_path="answer",
+        headers_env={"X-Lab-Key": "APPWN_DIRECT_HTTP_JSON_KEY"},
+        tool_calls_path="calls",
+        client=client,
+    )
+    report = Runner(
+        target,
+        scope=Scope.local_only(requests_per_minute=1_000_000),
+    ).run([_case()])
+    client.close()
+
+    assert secret not in json.dumps(report.to_dict(), sort_keys=True)
+    assert verify_report_evidence(report) == ()
+
+
+def test_convenience_run_redacts_openai_environment_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secret = "synthetic-direct-openai-credential"
+    monkeypatch.setenv("APPWN_DIRECT_OPENAI_KEY", secret)
+    client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(
+                200,
+                json={
+                    "id": secret,
+                    "model": secret,
+                    "choices": [
+                        {
+                            "finish_reason": secret,
+                            "message": {
+                                "content": secret,
+                                "tool_calls": [
+                                    {
+                                        "id": secret,
+                                        "function": {"name": secret, "arguments": secret},
+                                    }
+                                ],
+                            },
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 1},
+                },
+            )
+        )
+    )
+    target = OpenAICompatibleTarget(
+        model="lab",
+        base_url="http://127.0.0.1/v1",
+        api_key_env="APPWN_DIRECT_OPENAI_KEY",
+        client=client,
+    )
+    report = run(
+        target,
+        [_case()],
+        scope=Scope.local_only(requests_per_minute=1_000_000),
+    )
+    client.close()
+
+    assert secret not in json.dumps(report.to_dict(), sort_keys=True)
+    assert verify_report_evidence(report) == ()
+
+
+def test_runner_redacts_credentials_changed_during_strategy_generation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    secret = "synthetic-dynamic-http-credential"
+    monkeypatch.delenv("APPWN_DYNAMIC_HTTP_KEY", raising=False)
+
+    class CredentialSettingStrategy(Strategy):
+        name = "credential_setting"
+
+        def generate(
+            self,
+            case: AttackCase,
+            rng: random.Random,
+        ) -> Iterable[AttackVariant]:
+            del rng
+            monkeypatch.setenv("APPWN_DYNAMIC_HTTP_KEY", secret)
+            yield AttackVariant(
+                "dynamic:0",
+                case.case_id,
+                self.name,
+                (Message(Role.USER, case.prompt),),
+            )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"answer": request.headers["X-Lab-Key"]})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    target = HttpJsonTarget(
+        endpoint="http://127.0.0.1/test",
+        response_path="answer",
+        headers_env={"X-Lab-Key": "APPWN_DYNAMIC_HTTP_KEY"},
+        client=client,
+    )
+    report = Runner(
+        target,
+        scope=Scope.local_only(requests_per_minute=1_000_000),
+    ).run([_case()], CredentialSettingStrategy())
+    client.close()
+
+    assert secret not in json.dumps(report.to_dict(), sort_keys=True)
+
+
+def test_target_credential_rotation_preserves_authenticated_resume(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    environment_name = "APPWN_ROTATING_HTTP_KEY"
+    key = "k" * 32
+    scope = Scope.local_only(requests_per_minute=1_000_000)
+    config = RunConfig(checkpoint_hmac_key=key)
+    client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, json={"answer": "safe"})
+        )
+    )
+
+    monkeypatch.setenv(environment_name, "synthetic-credential-a")
+    baseline = Runner(
+        HttpJsonTarget(
+            endpoint="http://127.0.0.1/test",
+            response_path="answer",
+            headers_env={"X-Lab-Key": environment_name},
+            client=client,
+        ),
+        scope=scope,
+        config=config,
+    ).run([_case()])
+
+    monkeypatch.setenv(environment_name, "synthetic-credential-b")
+    resumed = Runner(
+        HttpJsonTarget(
+            endpoint="http://127.0.0.1/test",
+            response_path="answer",
+            headers_env={"X-Lab-Key": environment_name},
+            client=client,
+        ),
+        scope=scope,
+        config=config,
+    ).run(
+        [_case()],
+        resume_from=baseline,
+        expected_resume_integrity_sha256=baseline.integrity_sha256,
+    )
+    client.close()
+
+    assert resumed.metadata["resumed_from"] == baseline.run_id
+    assert verify_report_evidence(resumed) == ()
+
+
+def test_redaction_covers_structural_identifiers_and_resume() -> None:
+    secret = "synthetic-identifier-secret"
+
+    class SecretNamedStrategy(Strategy):
+        name = f"strategy-{secret}"
+
+        def generate(
+            self,
+            case: AttackCase,
+            rng: random.Random,
+        ) -> Iterable[AttackVariant]:
+            del rng
+            yield AttackVariant(
+                f"variant-{secret}",
+                case.case_id,
+                self.name,
+                (Message(Role.USER, "prompt"),),
+            )
+
+    key = "k" * 32
+    config = RunConfig(
+        redact_secrets=(secret,),
+        checkpoint_hmac_key=key,
+    )
+    case = AttackCase(
+        f"case-{secret}",
+        "Case",
+        "prompt",
+        CanaryLeakOracle("LAB_HARDENING"),
+    )
+    baseline = Runner(
+        FakeTarget("safe"),
+        scope=Scope.local_only(requests_per_minute=1_000_000),
+        config=config,
+        engagement_id=f"engagement-{secret}",
+    ).run([case], SecretNamedStrategy())
+    resumed = Runner(
+        FakeTarget("safe"),
+        scope=Scope.local_only(requests_per_minute=1_000_000),
+        config=config,
+        engagement_id=f"engagement-{secret}",
+    ).run(
+        [case],
+        SecretNamedStrategy(),
+        resume_from=baseline,
+        expected_resume_integrity_sha256=baseline.integrity_sha256,
+    )
+
+    assert secret not in json.dumps(resumed.to_dict(), sort_keys=True)
+    assert resumed.engagement_id == "engagement-[REDACTED]"
+    assert resumed.attempts[0].case_id == "case-[REDACTED]"
+    assert resumed.attempts[0].variant_id == "variant-[REDACTED]"
+    assert resumed.attempts[0].strategy == "strategy-[REDACTED]"
+    assert resumed.metadata["resumed_from"] == baseline.run_id
+    assert verify_report_evidence(resumed) == ()
+
+
+def test_redaction_rejects_ambiguous_structural_identifiers() -> None:
+    cases = [
+        AttackCase("case-left", "Left", "prompt", CanaryLeakOracle("LAB_HARDENING")),
+        AttackCase("case-right", "Right", "prompt", CanaryLeakOracle("LAB_HARDENING")),
+    ]
+    with pytest.raises(ValueError, match="case identifiers ambiguous"):
+        Runner(
+            FakeTarget("safe"),
+            scope=Scope.local_only(requests_per_minute=1_000_000),
+            config=RunConfig(redact_secrets=("left", "right")),
+        ).run(cases)
 
 
 def test_mapping_key_redaction_handles_collisions() -> None:

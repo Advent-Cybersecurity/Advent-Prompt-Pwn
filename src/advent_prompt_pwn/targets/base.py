@@ -29,6 +29,12 @@ class Target(ABC):
         return False
 
     @property
+    def sensitive_values(self) -> tuple[str, ...]:
+        """Return transient values that must be redacted from stored evidence."""
+
+        return ()
+
+    @property
     def resume_identity(self) -> Mapping[str, Any]:
         """Return the complete secret-free execution identity used for resume binding."""
 

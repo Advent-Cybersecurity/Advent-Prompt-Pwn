@@ -69,6 +69,12 @@ Use `FunctionTarget` when the assessed application is available as a Python call
 
 Use the built-in `http-json` target for ordinary JSON application APIs. Prefer `request_mode: messages` when testing multi-turn or role-boundary behavior. Secrets belong in environment-backed headers, never in adapter metadata or endpoint URLs.
 
+If a custom target reads credentials or other sensitive transport values, override the
+`sensitive_values` property and return those values as a tuple of strings. The runner merges
+them with `RunConfig.redact_secrets` for every stored field. The property must not log, persist,
+or include its values in `resume_identity`. Keep credential environment values stable for the
+duration of a run so the value sent by the adapter matches the run-scoped redaction snapshot.
+
 ## Oracle review
 
 For each oracle, document:

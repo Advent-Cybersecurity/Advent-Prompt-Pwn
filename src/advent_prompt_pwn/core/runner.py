@@ -179,6 +179,23 @@ def _redact_response(response: TargetResponse, secrets: tuple[str, ...]) -> Targ
     )
 
 
+def _merge_redact_secrets(*groups: Sequence[str]) -> tuple[str, ...]:
+    merged: list[str] = []
+    for group in groups:
+        if not isinstance(group, (list, tuple)) or any(
+            not isinstance(value, str) for value in group
+        ):
+            raise TypeError("redaction values must be a sequence of strings")
+        for value in group:
+            if value and value not in merged:
+                merged.append(value)
+    return tuple(merged)
+
+
+def _redact_identifier(value: str, secrets: tuple[str, ...]) -> str:
+    return redact_text(value, secrets)
+
+
 def _attempt_size(attempt: AttemptResult) -> int:
     return len(
         json.dumps(
@@ -215,15 +232,19 @@ def _response_size(response: TargetResponse) -> int:
     )
 
 
-def _static_evidence_size(case: AttackCase, variant: AttackVariant) -> int:
+def _static_evidence_size(
+    case: AttackCase,
+    variant: AttackVariant,
+    secrets: tuple[str, ...],
+) -> int:
     payload = {
-        "case_id": case.case_id,
-        "case_name": case.name,
-        "variant_id": variant.variant_id,
-        "strategy": variant.strategy,
-        "messages": [message.to_dict() for message in variant.messages],
-        "tags": list(case.tags),
-        "metadata": variant.metadata,
+        "case_id": _redact_identifier(case.case_id, secrets),
+        "case_name": redact_text(case.name, secrets),
+        "variant_id": _redact_identifier(variant.variant_id, secrets),
+        "strategy": _redact_identifier(variant.strategy, secrets),
+        "messages": [message.to_dict() for message in _redact_messages(variant.messages, secrets)],
+        "tags": [redact_text(tag, secrets) for tag in case.tags],
+        "metadata": redact_value(variant.metadata, secrets),
     }
     return len(
         json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
@@ -282,6 +303,10 @@ class Runner:
     ) -> RunReport:
         """Run all generated variants and return immutable evidence."""
 
+        secrets = _merge_redact_secrets(
+            self.config.redact_secrets,
+            self.target.sensitive_values,
+        )
         self.scope.assert_endpoint(self.target.endpoint)
         if self.config.concurrency > self.scope.max_concurrency:
             raise ValueError(
@@ -291,7 +316,10 @@ class Runner:
         if self.config.concurrency > 1 and self.config.stop_on_error:
             raise ValueError("stop_on_error requires concurrency=1")
         if self.config.concurrency > 1 and not self.target.supports_concurrency:
-            raise ValueError(f"target {self.target.name!r} does not support concurrent requests")
+            raise ValueError(
+                f"target {redact_text(self.target.name, secrets)!r} does not support "
+                "concurrent requests"
+            )
         active_strategy = strategy or DirectStrategy()
         rng = random.Random(self.config.seed)
         initial_requests = resume_from.request_count if resume_from else 0
@@ -311,12 +339,13 @@ class Runner:
             )
             if len(variants) > self.config.max_variants_per_case:
                 raise ValueError(
-                    f"strategy generated {len(variants)} variants for {case.case_id!r}; "
+                    f"strategy generated {len(variants)} variants for "
+                    f"{redact_text(case.case_id, secrets)!r}; "
                     f"limit is {self.config.max_variants_per_case}"
                 )
             for variant in variants:
                 if variant.variant_id in base_variant_ids:
-                    raise ValueError(f"duplicate variant id: {variant.variant_id}")
+                    raise ValueError("strategy generated a duplicate variant identifier")
                 base_variant_ids.add(variant.variant_id)
                 for trial_index in range(1, self.config.trials_per_variant + 1):
                     trial_variant = _trial_variant(
@@ -325,8 +354,12 @@ class Runner:
                         self.config.trials_per_variant,
                     )
                     if trial_variant.variant_id in job_ids:
-                        raise ValueError(f"duplicate trial variant id: {trial_variant.variant_id}")
-                    static_evidence_bytes += _static_evidence_size(case, trial_variant)
+                        raise ValueError("strategy generated a duplicate trial variant identifier")
+                    static_evidence_bytes += _static_evidence_size(
+                        case,
+                        trial_variant,
+                        secrets,
+                    )
                     if static_evidence_bytes > self.config.max_evidence_bytes:
                         raise ValueError(
                             "planned attempt messages and metadata exceed the cumulative "
@@ -335,12 +368,41 @@ class Runner:
                     job_ids.add(trial_variant.variant_id)
                     jobs.append((case, trial_variant))
 
-        resume_binding = self._resume_binding(jobs)
+        secrets = _merge_redact_secrets(secrets, self.target.sensitive_values)
+        redacted_case_ids: dict[str, str] = {}
+        for case in cases:
+            redacted_case_id = _redact_identifier(case.case_id, secrets)
+            previous_case_id = redacted_case_ids.setdefault(redacted_case_id, case.case_id)
+            if previous_case_id != case.case_id:
+                raise ValueError(
+                    "configured redaction values make case identifiers ambiguous"
+                )
+        redacted_job_ids: dict[str, str] = {}
+        for _case, variant in jobs:
+            redacted_variant_id = _redact_identifier(variant.variant_id, secrets)
+            previous_variant_id = redacted_job_ids.setdefault(
+                redacted_variant_id,
+                variant.variant_id,
+            )
+            if previous_variant_id != variant.variant_id:
+                raise ValueError(
+                    "configured redaction values make variant identifiers ambiguous"
+                )
+        static_evidence_bytes = sum(
+            _static_evidence_size(case, variant, secrets) for case, variant in jobs
+        )
+        if static_evidence_bytes > self.config.max_evidence_bytes:
+            raise ValueError(
+                "planned attempt messages and metadata exceed the cumulative evidence budget"
+            )
+
+        resume_binding = self._resume_binding(jobs, secrets)
         previous = self._resume_attempts(
             resume_from,
             jobs,
             resume_binding,
             expected_resume_integrity_sha256,
+            secrets,
         )
         initial_not_before_epoch_s: float | None = None
         if resume_from is not None and resume_from.request_count:
@@ -391,6 +453,7 @@ class Runner:
                 guard.count,
                 resume_from,
                 resume_binding,
+                secrets,
             )
         if self.config.concurrency == 1:
             for case, variant in pending:
@@ -398,8 +461,10 @@ class Runner:
                     case,
                     variant,
                     guard,
+                    secrets,
                     requests_pre_reserved=durable_reservations,
                 )
+                secrets = _merge_redact_secrets(secrets, self.target.sensitive_values)
                 if durable_reservations:
                     guard.release(maximum_requests_per_job - result.request_attempts)
                 if variant.variant_id in previous and previous[variant.variant_id].error:
@@ -445,6 +510,7 @@ class Runner:
                         guard.count,
                         resume_from,
                         resume_binding,
+                        secrets,
                     )
                 if result.error and self.config.stop_on_error:
                     stopped_early = True
@@ -469,12 +535,14 @@ class Runner:
                         case,
                         variant,
                         guard,
+                        secrets,
                         requests_pre_reserved=durable_reservations,
                     ): variant.variant_id
                     for case, variant in pending
                 }
                 for future in as_completed(tuple(futures)):
                     result = future.result()
+                    secrets = _merge_redact_secrets(secrets, self.target.sensitive_values)
                     variant_id = futures.pop(future)
                     if durable_reservations:
                         guard.release(maximum_requests_per_job - result.request_attempts)
@@ -518,11 +586,13 @@ class Runner:
                             guard.count,
                             resume_from,
                             resume_binding,
+                            secrets,
                         )
 
         ordered = [
             results[variant.variant_id] for _, variant in jobs if variant.variant_id in results
         ]
+        secrets = _merge_redact_secrets(secrets, self.target.sensitive_values)
         report = self._report(
             run_id,
             run_started,
@@ -532,6 +602,7 @@ class Runner:
             resumed_from=resume_from.run_id if resume_from else None,
             resume_binding=resume_binding,
             planned_attempts=len(jobs),
+            secrets=secrets,
         )
         if self.checkpoint_callback:
             self.checkpoint_callback(report)
@@ -543,6 +614,7 @@ class Runner:
         jobs: Sequence[tuple[AttackCase, AttackVariant]],
         resume_binding: str,
         expected_integrity_sha256: str | None,
+        secrets: tuple[str, ...],
     ) -> dict[str, AttemptResult]:
         if report is None:
             if expected_integrity_sha256 is not None:
@@ -559,7 +631,8 @@ class Runner:
         integrity_errors = verify_report_evidence(report)
         if integrity_errors:
             raise ValueError(
-                "resume report failed integrity verification: " + "; ".join(integrity_errors)
+                "resume report failed integrity verification: "
+                + "; ".join(redact_text(error, secrets) for error in integrity_errors)
             )
         supplied_mac = report.metadata.get(_CHECKPOINT_HMAC_KEY)
         if self.config.checkpoint_hmac_key is not None:
@@ -573,7 +646,6 @@ class Runner:
                 "resume requires checkpoint_hmac_key; use the explicit "
                 "allow_unauthenticated_resume compatibility opt-in only for reviewed evidence"
             )
-        secrets = self.config.redact_secrets
         if report.target_name != redact_text(self.target.name, secrets):
             raise ValueError("resume report target name does not match the active target")
         if report.target_endpoint != redact_endpoint(self.target.endpoint, secrets):
@@ -586,39 +658,47 @@ class Runner:
             else None
         ):
             raise ValueError("resume report authorization reference does not match")
-        if report.engagement_id != self.engagement_id:
+        expected_engagement_id = (
+            _redact_identifier(self.engagement_id, secrets)
+            if self.engagement_id is not None
+            else None
+        )
+        if report.engagement_id != expected_engagement_id:
             raise ValueError("resume report engagement does not match")
         if report.corpus_sha256 != self.corpus_sha256:
             raise ValueError("resume report corpus digest does not match")
         if report.metadata.get("resume_binding_sha256") != resume_binding:
             raise ValueError("resume report execution binding does not match the active run")
-        expected = {variant.variant_id: (case, variant) for case, variant in jobs}
+        expected = {
+            _redact_identifier(variant.variant_id, secrets): (case, variant)
+            for case, variant in jobs
+        }
         previous: dict[str, AttemptResult] = {}
         for attempt in report.attempts:
             if attempt.variant_id not in expected:
-                raise ValueError(f"resume report contains unknown variant: {attempt.variant_id}")
+                raise ValueError("resume report contains an unknown variant identifier")
             case, variant = expected[attempt.variant_id]
             expected_metadata = {
-                "variant": redact_value(variant.metadata, self.config.redact_secrets)
+                "variant": redact_value(variant.metadata, secrets)
             }
             if (
-                attempt.case_id != case.case_id
+                attempt.case_id != _redact_identifier(case.case_id, secrets)
                 or attempt.case_name != redact_text(case.name, secrets)
-                or attempt.strategy != variant.strategy
+                or attempt.strategy != _redact_identifier(variant.strategy, secrets)
                 or attempt.messages != _redact_messages(variant.messages, secrets)
                 or attempt.tags != tuple(redact_text(tag, secrets) for tag in case.tags)
                 or attempt.severity != case.severity
                 or attempt.metadata != expected_metadata
             ):
-                raise ValueError(
-                    f"resume evidence for variant {attempt.variant_id!r} does not match "
-                    "the active corpus and strategy"
-                )
-            previous[attempt.variant_id] = attempt
+                raise ValueError("resume evidence does not match the active corpus and strategy")
+            previous[variant.variant_id] = attempt
         return previous
 
-    def _resume_binding(self, jobs: Sequence[tuple[AttackCase, AttackVariant]]) -> str:
-        secrets = self.config.redact_secrets
+    def _resume_binding(
+        self,
+        jobs: Sequence[tuple[AttackCase, AttackVariant]],
+        secrets: tuple[str, ...],
+    ) -> str:
         return self._identity_digest(
             {
                 "version": 2,
@@ -629,7 +709,11 @@ class Runner:
                     if self.scope.authorization_reference
                     else None
                 ),
-                "engagement_id": self.engagement_id,
+                "engagement_id": (
+                    _redact_identifier(self.engagement_id, secrets)
+                    if self.engagement_id is not None
+                    else None
+                ),
                 "corpus_sha256": self.corpus_sha256,
                 "scope": {
                     "mode": self.scope.mode.value,
@@ -664,10 +748,10 @@ class Runner:
                 "runner_metadata": redact_value(self.metadata, secrets),
                 "jobs": [
                     {
-                        "case_id": case.case_id,
+                        "case_id": _redact_identifier(case.case_id, secrets),
                         "case_name": redact_text(case.name, secrets),
-                        "variant_id": variant.variant_id,
-                        "strategy": variant.strategy,
+                        "variant_id": _redact_identifier(variant.variant_id, secrets),
+                        "strategy": _redact_identifier(variant.strategy, secrets),
                         "messages": [
                             message.to_dict()
                             for message in _redact_messages(variant.messages, secrets)
@@ -704,6 +788,7 @@ class Runner:
         request_count: int,
         resume_from: RunReport | None,
         resume_binding: str,
+        secrets: tuple[str, ...],
     ) -> None:
         if not self.checkpoint_callback:
             return
@@ -720,6 +805,7 @@ class Runner:
                 resumed_from=resume_from.run_id if resume_from else None,
                 resume_binding=resume_binding,
                 planned_attempts=len(jobs),
+                secrets=secrets,
             )
         )
 
@@ -728,11 +814,13 @@ class Runner:
         case: AttackCase,
         variant: AttackVariant,
         guard: RequestGuard,
+        secrets: tuple[str, ...],
         *,
         requests_pre_reserved: bool = False,
     ) -> AttemptResult:
         started = _now()
         started_clock = time.perf_counter()
+        evidence_secrets = secrets
         response: TargetResponse | None = None
         oracle: OracleResult | None = None
         error: str | None = None
@@ -745,23 +833,31 @@ class Runner:
                     guard.acquire()
                 request_attempts += 1
                 response = self.target.complete(variant.messages, timeout_s=self.config.timeout_s)
+                evidence_secrets = _merge_redact_secrets(
+                    evidence_secrets,
+                    self.target.sensitive_values,
+                )
                 if not isinstance(response, TargetResponse):
                     raise TypeError("target adapter must return TargetResponse")
                 if _response_size(response) > self.config.max_evidence_bytes:
                     raise ValueError("target response exceeds the cumulative evidence budget")
                 oracle = case.oracle.evaluate(case, variant, response)
-                response = _redact_response(response, self.config.redact_secrets)
+                response = _redact_response(response, evidence_secrets)
                 oracle = OracleResult(
                     success=oracle.success,
-                    reason=redact_text(oracle.reason, self.config.redact_secrets),
+                    reason=redact_text(oracle.reason, evidence_secrets),
                     score=oracle.score,
-                    evidence=redact_value(oracle.evidence, self.config.redact_secrets),
+                    evidence=redact_value(oracle.evidence, evidence_secrets),
                 )
                 error = None
                 break
             except BudgetExceeded:
                 raise
             except Exception as exc:  # Target and plugin boundaries must become report evidence.
+                evidence_secrets = _merge_redact_secrets(
+                    evidence_secrets,
+                    self.target.sensitive_values,
+                )
                 error = f"{type(exc).__name__}: {exc}"
                 response = None
                 oracle = None
@@ -770,25 +866,25 @@ class Runner:
                 if self.config.retry_backoff_s:
                     time.sleep(self.config.retry_backoff_s * (2**retry))
 
-        redacted_messages = _redact_messages(variant.messages, self.config.redact_secrets)
-        redacted_error = redact_text(error, self.config.redact_secrets) if error else None
+        redacted_messages = _redact_messages(variant.messages, evidence_secrets)
+        redacted_error = redact_text(error, evidence_secrets) if error else None
         attempt = AttemptResult(
-            case_id=case.case_id,
-            case_name=redact_text(case.name, self.config.redact_secrets),
-            variant_id=variant.variant_id,
-            strategy=variant.strategy,
+            case_id=redact_text(case.case_id, secrets),
+            case_name=redact_text(case.name, evidence_secrets),
+            variant_id=redact_text(variant.variant_id, secrets),
+            strategy=redact_text(variant.strategy, secrets),
             messages=redacted_messages,
             response=response,
             oracle=oracle,
             started_at=started,
             evidence_sha256="",
             error=redacted_error,
-            tags=tuple(redact_text(tag, self.config.redact_secrets) for tag in case.tags),
+            tags=tuple(redact_text(tag, evidence_secrets) for tag in case.tags),
             completed_at=_now(),
             duration_ms=(time.perf_counter() - started_clock) * 1000,
             request_attempts=max(request_attempts, 1),
             severity=case.severity,
-            metadata={"variant": redact_value(variant.metadata, self.config.redact_secrets)},
+            metadata={"variant": redact_value(variant.metadata, evidence_secrets)},
         )
         return seal_attempt(attempt)
 
@@ -803,9 +899,10 @@ class Runner:
         resumed_from: str | None,
         resume_binding: str,
         planned_attempts: int,
+        secrets: tuple[str, ...],
     ) -> RunReport:
         metadata = {
-            **redact_value(self.metadata, self.config.redact_secrets),
+            **redact_value(self.metadata, secrets),
             "scope_mode": self.scope.mode.value,
             "stopped_early": stopped_early,
             "telemetry": "disabled",
@@ -838,20 +935,24 @@ class Runner:
             metadata["resumed_from"] = resumed_from
         report = RunReport(
             run_id=run_id,
-            target_name=redact_text(self.target.name, self.config.redact_secrets),
-            target_endpoint=redact_endpoint(self.target.endpoint, self.config.redact_secrets),
+            target_name=redact_text(self.target.name, secrets),
+            target_endpoint=redact_endpoint(self.target.endpoint, secrets),
             started_at=started_at,
             completed_at=_now(),
             seed=self.config.seed,
             attempts=tuple(results),
             authorization_reference=(
-                redact_text(self.scope.authorization_reference, self.config.redact_secrets)
+                redact_text(self.scope.authorization_reference, secrets)
                 if self.scope.authorization_reference
                 else None
             ),
             metadata=metadata,
             tool_version=_tool_version(),
-            engagement_id=self.engagement_id,
+            engagement_id=(
+                _redact_identifier(self.engagement_id, secrets)
+                if self.engagement_id is not None
+                else None
+            ),
             corpus_sha256=self.corpus_sha256,
             request_count=request_count,
         )

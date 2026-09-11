@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import runpy
 import sys
 from collections.abc import Sequence
@@ -17,7 +18,8 @@ from advent_prompt_pwn import (
     Runner,
     Scope,
 )
-from advent_prompt_pwn.cli import _extra_body, _headers_env, main
+from advent_prompt_pwn.bundle import write_evidence_bundle
+from advent_prompt_pwn.cli import _extra_body, _headers_env, _terminal_safe, main
 from advent_prompt_pwn.integrity import seal_report
 from advent_prompt_pwn.report_io import load_report
 from advent_prompt_pwn.reporters import save_report
@@ -402,6 +404,108 @@ def test_cli_authorized_scope_and_new_resource_options(tmp_path: Path) -> None:
         )
         == 0
     )
+
+
+def test_cli_neutralizes_untrusted_terminal_controls(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    hostile = "field\x1b]0;spoofed\x07\r\nforged\x85"
+    rendered = _terminal_safe(hostile + ("x" * 5000))
+    assert rendered.startswith("field\\x1b]0;spoofed\\x07\\x0d\\x0aforged\\x85")
+    assert rendered.endswith("...[truncated]")
+    assert len(rendered) <= 4096
+
+    corpus = tmp_path / "hostile.json"
+    corpus.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "cases": [
+                    {
+                        "id": hostile,
+                        "name": "First",
+                        "prompt": "prompt",
+                        "oracle": {"type": "contains", "value": "marker"},
+                    },
+                    {
+                        "id": hostile,
+                        "name": "Second",
+                        "prompt": "prompt",
+                        "oracle": {"type": "contains", "value": "marker"},
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(SystemExit) as raised:
+        main(["validate", str(corpus)])
+    assert raised.value.code == 2
+    corpus_error = capsys.readouterr().err
+    assert "\x1b" not in corpus_error
+    assert "\\x1b" in corpus_error
+    assert "\\x0a" in corpus_error
+
+    report = Runner(
+        FakeTarget("safe"),
+        scope=Scope.local_only(requests_per_minute=1_000_000),
+    ).run(
+        [AttackCase("case", "Case", "prompt", CanaryLeakOracle("LAB_TERMINAL"))]
+    )
+    valid_hostile = seal_report(
+        replace(report, run_id=hostile, integrity_sha256="")
+    )
+    valid_report = tmp_path / "valid-hostile.json"
+    save_report(valid_hostile, valid_report)
+    assert main(["verify", str(valid_report)]) == 0
+    valid_output = capsys.readouterr().out
+    assert "\x1b" not in valid_output
+    assert "\\x1b" in valid_output
+
+    hostile_attempt = replace(
+        report.attempts[0],
+        variant_id=hostile,
+        evidence_sha256="invalid",
+    )
+    invalid_hostile = seal_report(
+        replace(report, attempts=(hostile_attempt,), integrity_sha256="")
+    )
+    invalid_report = tmp_path / "invalid-hostile.json"
+    save_report(invalid_hostile, invalid_report)
+    assert main(["verify", str(invalid_report)]) == 2
+    invalid_output = capsys.readouterr().out
+    assert "\x1b" not in invalid_output
+    assert "\\x1b" in invalid_output
+
+    many_invalid_attempts = tuple(
+        replace(
+            report.attempts[0],
+            variant_id=f"variant-{index}-" + ("x" * 4090),
+            evidence_sha256="invalid",
+        )
+        for index in range(100)
+    )
+    many_invalid = seal_report(
+        replace(report, attempts=many_invalid_attempts, integrity_sha256="")
+    )
+    many_invalid_report = tmp_path / "many-invalid.json"
+    save_report(many_invalid, many_invalid_report)
+    assert main(["verify", str(many_invalid_report)]) == 2
+    bounded_output = capsys.readouterr().out
+    assert len(bounded_output) <= 4096
+    assert "additional diagnostics omitted" in bounded_output
+
+    bundle = tmp_path / "bundle"
+    write_evidence_bundle(report, bundle)
+    manifest_path = bundle / "bundle-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["files"][0]["path"] = hostile
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    assert main(["verify", str(bundle)]) == 2
+    bundle_output = capsys.readouterr().out
+    assert "\x1b" not in bundle_output
+    assert "\\x1b" in bundle_output
 
 
 def test_python_module_entrypoint_runs_doctor(

@@ -55,6 +55,47 @@ from advent_prompt_pwn.validation import validate_json_value
 
 _ENVIRONMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _HEADER_NAME = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+_MAX_TERMINAL_TEXT_CHARS = 4096
+_TRUNCATED_TERMINAL_TEXT = "...[truncated]"
+_MAX_DIAGNOSTIC_LINES = 20
+_MAX_DIAGNOSTIC_LINE_CHARS = 180
+_OMITTED_DIAGNOSTICS = "- ...[additional diagnostics omitted]"
+
+
+def _terminal_safe(value: object, *, max_chars: int = _MAX_TERMINAL_TEXT_CHARS) -> str:
+    """Render untrusted values without terminal controls or unbounded output."""
+
+    if max_chars <= 0:
+        return ""
+    pieces: list[str] = []
+    rendered_length = 0
+    for character in str(value):
+        codepoint = ord(character)
+        if character.isprintable():
+            replacement = character
+        elif codepoint <= 0xFF:
+            replacement = f"\\x{codepoint:02x}"
+        elif codepoint <= 0xFFFF:
+            replacement = f"\\u{codepoint:04x}"
+        else:
+            replacement = f"\\U{codepoint:08x}"
+        if rendered_length + len(replacement) > max_chars:
+            while pieces and rendered_length + len(_TRUNCATED_TERMINAL_TEXT) > max_chars:
+                rendered_length -= len(pieces.pop())
+            remaining = max_chars - rendered_length
+            pieces.append(_TRUNCATED_TERMINAL_TEXT[:remaining])
+            return "".join(pieces)
+        pieces.append(replacement)
+        rendered_length += len(replacement)
+    return "".join(pieces)
+
+
+def _print_verification_errors(title: str, errors: Sequence[str]) -> None:
+    print(title)
+    for error in errors[:_MAX_DIAGNOSTIC_LINES]:
+        print(_terminal_safe(f"- {error}", max_chars=_MAX_DIAGNOSTIC_LINE_CHARS))
+    if len(errors) > _MAX_DIAGNOSTIC_LINES:
+        print(_OMITTED_DIAGNOSTICS)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -344,17 +385,22 @@ def _run(args: argparse.Namespace) -> int:
     if args.api_key_env:
         if not _ENVIRONMENT_NAME.fullmatch(args.api_key_env):
             raise ValueError(f"invalid environment variable name: {args.api_key_env!r}")
-        credential_names.add(args.api_key_env)
-    credential_names.update(_headers_env(args.header_env).values())
+        if args.target != "openai-compatible":
+            credential_names.add(args.api_key_env)
+    header_environment_names = _headers_env(args.header_env).values()
+    if args.target != "http-json":
+        credential_names.update(header_environment_names)
     environment_redactions = tuple(
         value for name in sorted(credential_names) if (value := os.environ.get(name))
     )
 
     def checkpoint_report(checkpoint: RunReport) -> None:
         print(
-            f"Checkpoint candidate: {Path(args.checkpoint).resolve()} | "
-            f"Run: {checkpoint.run_id} | Requests: {checkpoint.request_count} | "
-            f"Integrity: {checkpoint.integrity_sha256}",
+            _terminal_safe(
+                f"Checkpoint candidate: {Path(args.checkpoint).resolve()} | "
+                f"Run: {checkpoint.run_id} | Requests: {checkpoint.request_count} | "
+                f"Integrity: {checkpoint.integrity_sha256}"
+            ),
             flush=True,
         )
         save_report(checkpoint, args.checkpoint)
@@ -395,9 +441,9 @@ def _run(args: argparse.Namespace) -> int:
     destination = save_report(report, args.output, format_name=args.format)
     if args.bundle:
         write_evidence_bundle(report, args.bundle)
-    print(f"Report: {destination}")
+    print(_terminal_safe(f"Report: {destination}"))
     if args.checkpoint:
-        print(f"Checkpoint: {Path(args.checkpoint).resolve()}")
+        print(_terminal_safe(f"Checkpoint: {Path(args.checkpoint).resolve()}"))
         print(f"Checkpoint integrity: {report.integrity_sha256}")
     print(
         f"Attempts: {len(report.attempts)} | Adversarial successes: "
@@ -414,7 +460,7 @@ def _run(args: argparse.Namespace) -> int:
 def _engagement(args: argparse.Namespace) -> int:
     if args.engagement_command == "init":
         destination = write_starter_engagement(args.path, force=args.force)
-        print(f"Created {destination}")
+        print(_terminal_safe(f"Created {destination}"))
         return 0
     definition = load_engagement(
         args.manifest,
@@ -423,10 +469,12 @@ def _engagement(args: argparse.Namespace) -> int:
     if args.engagement_command == "validate":
         plan = plan_engagement(definition)
         print(
-            f"Valid engagement: {definition.engagement_id} | "
-            f"Cases: {len(plan.cases)} | Variants: {plan.variants} | "
-            f"Planned attempts: {plan.planned_attempts} | "
-            f"Target: {definition.target.kind}"
+            _terminal_safe(
+                f"Valid engagement: {definition.engagement_id} | "
+                f"Cases: {len(plan.cases)} | Variants: {plan.variants} | "
+                f"Planned attempts: {plan.planned_attempts} | "
+                f"Target: {definition.target.kind}"
+            )
         )
         return 0
     resume = load_report(args.resume) if args.resume else None
@@ -457,8 +505,10 @@ def _engagement(args: argparse.Namespace) -> int:
     def checkpoint(report: RunReport) -> None:
         if checkpoint_path:
             print(
-                f"Checkpoint candidate: {checkpoint_path} | Run: {report.run_id} | "
-                f"Requests: {report.request_count} | Integrity: {report.integrity_sha256}",
+                _terminal_safe(
+                    f"Checkpoint candidate: {checkpoint_path} | Run: {report.run_id} | "
+                    f"Requests: {report.request_count} | Integrity: {report.integrity_sha256}"
+                ),
                 flush=True,
             )
             save_report(report, checkpoint_path)
@@ -492,9 +542,9 @@ def _engagement(args: argparse.Namespace) -> int:
         root / f"run-{result.report.run_id}",
         formats=tuple(args.format or definition.output.formats),
     )
-    print(f"Evidence bundle: {bundle}")
+    print(_terminal_safe(f"Evidence bundle: {bundle}"))
     if checkpoint_path:
-        print(f"Checkpoint: {checkpoint_path}")
+        print(_terminal_safe(f"Checkpoint: {checkpoint_path}"))
         print(f"Checkpoint integrity: {result.report.integrity_sha256}")
     print(
         f"Attempts: {len(result.report.attempts)} | Findings: {len(result.report.findings)} | "
@@ -537,7 +587,7 @@ def _compare(args: argparse.Namespace) -> int:
         allow_corpus_change=args.allow_corpus_change,
     )
     destination = save_comparison(comparison, args.output)
-    print(f"Comparison: {destination}")
+    print(_terminal_safe(f"Comparison: {destination}"))
     print(
         f"New findings: {len(comparison.new_findings)} | "
         f"Resolved: {len(comparison.resolved_findings)} | "
@@ -551,7 +601,7 @@ def _reproducers(args: argparse.Namespace) -> int:
     report = load_report(args.report)
     destination = save_minimal_reproducers(report, args.output)
     selected = select_minimal_reproducers(report)
-    print(f"Reproducers: {destination} ({len(selected)} finding(s))")
+    print(_terminal_safe(f"Reproducers: {destination} ({len(selected)} finding(s))"))
     return 0
 
 
@@ -576,23 +626,27 @@ def _verify(args: argparse.Namespace) -> int:
             ):
                 print("Invalid checkpoint authentication")
                 return 2
-            print(f"Valid evidence bundle: {result.run_id} ({result.files_checked} files)")
+            print(
+                _terminal_safe(
+                    f"Valid evidence bundle: {result.run_id} ({result.files_checked} files)"
+                )
+            )
             return 0
-        print("Invalid evidence bundle:")
-        for error in result.errors:
-            print(f"- {error}")
+        _print_verification_errors("Invalid evidence bundle:", result.errors)
         return 2
     report = load_report(path)
     errors = verify_report_evidence(report)
     if errors:
-        print("Invalid report evidence:")
-        for error in errors:
-            print(f"- {error}")
+        _print_verification_errors("Invalid report evidence:", errors)
         return 2
     if authentication_key and not verify_checkpoint_authentication(report, authentication_key):
         print("Invalid checkpoint authentication")
         return 2
-    print(f"Valid report evidence: {report.run_id} ({len(report.attempts)} attempts)")
+    print(
+        _terminal_safe(
+            f"Valid report evidence: {report.run_id} ({len(report.attempts)} attempts)"
+        )
+    )
     return 0
 
 
@@ -603,7 +657,7 @@ def _schema(args: argparse.Namespace) -> int:
         return 0
     destination = Path(args.output)
     atomic_write_text(destination, rendered)
-    print(f"Schema: {destination}")
+    print(_terminal_safe(f"Schema: {destination}"))
     return 0
 
 
@@ -628,7 +682,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.command == "init":
             destination = write_starter_corpus(args.path, force=args.force)
-            print(f"Created {destination}")
+            print(_terminal_safe(f"Created {destination}"))
             return 0
         if args.command == "validate":
             cases = load_corpus(args.corpus)
@@ -636,7 +690,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if args.command == "strategies":
             for name in strategy_names():
-                print(name)
+                print(_terminal_safe(name))
             return 0
         if args.command == "doctor":
             return _doctor()
@@ -653,7 +707,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "run":
             return _run(args)
     except (AdventPromptPwnError, FileExistsError, KeyError, OSError, ValueError) as exc:
-        parser.error(str(exc))
+        parser.error(_terminal_safe(exc))
     return 2
 
 
