@@ -119,7 +119,8 @@ warn_unreachable = true
 
 [tool.mutmut]
 debug = true
-source_paths = [
+source_paths = ["src"]
+only_mutate = [
   "src/advent_prompt_pwn/core/redaction.py",
   "src/advent_prompt_pwn/integrity.py",
 ]
