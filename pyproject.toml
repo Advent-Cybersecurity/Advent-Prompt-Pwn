@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling==1.32.0"]
+requires = ["hatchling==1.32.4"]
 build-backend = "hatchling.build"
 
 [project]
@@ -41,8 +41,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-  "build==1.6.0",
-  "hypothesis==6.168.0",
+  "build==1.6.1",
+  "hypothesis==6.168.3",
   "mypy>=1.13",
   "pip-audit>=2.9",
   "pytest>=8.3",
@@ -58,10 +58,10 @@ docs = [
   "mkdocs-material==9.7.7",
 ]
 mutation = [
-  "mutmut==3.7.0",
+  "mutmut==3.8.0",
 ]
 sbom = [
-  "cyclonedx-bom==7.3.1",
+  "cyclonedx-bom==7.5.0",
 ]
 
 [project.urls]
